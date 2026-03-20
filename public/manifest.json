@@ -1,0 +1,17 @@
+{
+  "name": "KLIK",
+  "short_name": "KLIK",
+  "description": "Gestion de rendez-vous pour professionnels tunisiens",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F1EC",
+  "theme_color": "#C8372D",
+  "icons": [
+    {
+      "src": "/klik-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
