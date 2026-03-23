@@ -157,6 +157,8 @@ export default function Settings() {
             setServices([...services, data[0]]);
             setShowAddServiceModal(false);
             setNewService({ name: '', price: '', duration_minutes: '' });
+            // Bug 1 Fix: Clear sessionStorage cache for services when new service is added
+            sessionStorage.removeItem('klik_services');
         }
     };
 

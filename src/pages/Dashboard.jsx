@@ -155,12 +155,12 @@ export default function Dashboard() {
         fetchDashboardData();
     }, [selectedTab]);
 
-    // Realtime subscription for new appointments
+    // Realtime subscription for new appointments (Bug 3 Fix)
     useEffect(() => {
         if (!pro?.id) return;
 
         const channel = supabase
-            .channel('appointments-changes')
+            .channel(`appointments:${pro.id}`)
             .on(
                 'postgres_changes',
                 {
@@ -170,26 +170,15 @@ export default function Dashboard() {
                     filter: `pro_id=eq.${pro.id}`
                 },
                 (payload) => {
-                    const newAppt = payload.new;
-                    
-                    // Enrich with service data directly from local state/cache
-                    // This avoids fetching extra data while ensuring UI has name/price
-                    const service = services.find(s => s.id === newAppt.service_id);
-                    const enrichedAppt = { ...newAppt, services: service };
-
-                    setAppointments(prev => {
-                        // Check for duplicates to be safe
-                        if (prev.find(a => a.id === enrichedAppt.id)) return prev;
-                        // Add and re-sort
-                        return [...prev, enrichedAppt].sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
-                    });
+                    // Refresh all dashboard data (Fix for Bug 3)
+                    fetchDashboardData();
 
                     // Force notification
                     if ('Notification' in window) {
                         Notification.requestPermission().then(permission => {
                             if (permission === 'granted') {
                                 new Notification('🔔 Nouveau RDV via KLIK !', {
-                                    body: `${newAppt.client_name} — ${newAppt.appointment_date} à ${newAppt.appointment_time}`,
+                                    body: `${payload.new.client_name} — ${payload.new.appointment_date} à ${payload.new.appointment_time}`,
                                     icon: '/klik-icon.png',
                                     badge: '/klik-icon.png'
                                 });
@@ -203,7 +192,7 @@ export default function Dashboard() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [pro?.id, services]);
+    }, [pro?.id]); // Removed services dependency as we refresh whole dashboard
 
     useEffect(() => {
         if (visibleAppointments.length === 0) return;
@@ -268,11 +257,15 @@ export default function Dashboard() {
 
             if (!proDataToUse) return;
 
+            // Bug 1 Fix: Ensure services fetch uses correct pro_id from auth user
             const cachedServices = sessionStorage.getItem('klik_services');
             if (cachedServices) {
                 setServices(JSON.parse(cachedServices));
             } else {
-                const { data: servicesData } = await supabase.from('services').select('*').eq('pro_id', proDataToUse.id);
+                const { data: servicesData } = await supabase
+                    .from('services')
+                    .select('*')
+                    .eq('pro_id', user.id); // Using user.id directly
                 const sData = servicesData || [];
                 setServices(sData);
                 sessionStorage.setItem('klik_services', JSON.stringify(sData));
