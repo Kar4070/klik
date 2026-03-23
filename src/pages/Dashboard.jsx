@@ -155,6 +155,56 @@ export default function Dashboard() {
         fetchDashboardData();
     }, [selectedTab]);
 
+    // Realtime subscription for new appointments
+    useEffect(() => {
+        if (!pro?.id) return;
+
+        const channel = supabase
+            .channel('appointments-changes')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'appointments',
+                    filter: `pro_id=eq.${pro.id}`
+                },
+                (payload) => {
+                    const newAppt = payload.new;
+                    
+                    // Enrich with service data directly from local state/cache
+                    // This avoids fetching extra data while ensuring UI has name/price
+                    const service = services.find(s => s.id === newAppt.service_id);
+                    const enrichedAppt = { ...newAppt, services: service };
+
+                    setAppointments(prev => {
+                        // Check for duplicates to be safe
+                        if (prev.find(a => a.id === enrichedAppt.id)) return prev;
+                        // Add and re-sort
+                        return [...prev, enrichedAppt].sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
+                    });
+
+                    // Force notification
+                    if ('Notification' in window) {
+                        Notification.requestPermission().then(permission => {
+                            if (permission === 'granted') {
+                                new Notification('🔔 Nouveau RDV via KLIK !', {
+                                    body: `${newAppt.client_name} — ${newAppt.appointment_date} à ${newAppt.appointment_time}`,
+                                    icon: '/klik-icon.png',
+                                    badge: '/klik-icon.png'
+                                });
+                            }
+                        });
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [pro?.id, services]);
+
     useEffect(() => {
         if (visibleAppointments.length === 0) return;
         
@@ -587,10 +637,19 @@ export default function Dashboard() {
                                 const activeAppointments = [];
                                 const pastAppointments = [];
                                 
+                                const todayStr = new Date().toLocaleDateString('en-CA');
+                                const now = new Date();
+                                const currentMins = now.getHours() * 60 + now.getMinutes();
+
                                 visibleAppointments.forEach(appt => {
+                                    const isToday = appt.appointment_date === todayStr;
                                     const [h, m] = appt.appointment_time.split(':').map(Number);
                                     const apptMinutes = h * 60 + m;
-                                    if (nowMinutes - apptMinutes > 30) {
+                                    
+                                    // Fix: Only today's appointments can be "Terminé" visually if they passed > 30 min ago
+                                    const isTerminated = isToday && (currentMins - apptMinutes > 30);
+                                    
+                                    if (isTerminated) {
                                         pastAppointments.push(appt);
                                     } else {
                                         activeAppointments.push(appt);
@@ -606,8 +665,8 @@ export default function Dashboard() {
                                     let cardStyle = "relative flex bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm shadow-gray-200/50 group transition-all duration-300";
                                     
                                     if (isPast) {
-                                        sColor = "bg-green-500";
-                                        sText = "bg-green-100 text-green-700";
+                                        sColor = "bg-gray-300";
+                                        sText = "bg-gray-100 text-gray-500 border border-gray-200";
                                         sLabel = "✓ Terminé";
                                         nameStyle = "font-bold text-gray-900 text-sm";
                                         cardStyle = "relative flex bg-gray-50 border border-gray-200 rounded-xl overflow-hidden group transition-all duration-300 opacity-60";
@@ -634,46 +693,46 @@ export default function Dashboard() {
                                     return (
                                         <div key={appt.id} className={`${cardStyle} ${animatingId === appt.id ? 'opacity-0 scale-95 !h-0 !p-0 !border-0 mb-0 pointer-events-none' : ''}`}>
                                             <div className={`w-1.5 ${sColor}`}></div>
-                                            <div className="flex-1 p-3 flex justify-between items-center">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-14 text-center border-r border-gray-100 pr-2">
-                                                        <p className="font-bold text-gray-900 leading-none">{appt.appointment_time}</p>
-                                                        <p className="text-[10px] text-gray-400 font-medium mt-1">{appt.services?.duration_minutes || 0} min</p>
+                                            <div className="flex-1 p-3 flex flex-col gap-2">
+                                                <div className="flex justify-between items-center">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-14 text-center border-r border-gray-100 pr-2">
+                                                            <p className="font-bold text-gray-900 leading-none">{appt.appointment_time}</p>
+                                                            <p className="text-[10px] text-gray-400 font-medium mt-1">{appt.services?.duration_minutes || 0} min</p>
+                                                        </div>
+                                                        <div>
+                                                            <p className={nameStyle}>{appt.client_name}</p>
+                                                            <p className="text-xs text-gray-500 font-medium truncate max-w-[120px]">
+                                                                {appt.services?.name || 'RDV Manuel'} • {appt.services?.price || '0'} DT
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <p className={nameStyle}>{appt.client_name}</p>
-                                                        <p className="text-xs text-gray-500 font-medium truncate max-w-[120px]">
-                                                            {appt.services?.name || 'RDV Manuel'} • {appt.services?.price || '0'} DT
-                                                        </p>
-                                                    </div>
+                                                    <span className={`text-[10px] uppercase font-black px-2 py-1 rounded-md ${sText}`}>
+                                                        {sLabel}
+                                                    </span>
                                                 </div>
                                                 
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center justify-end gap-2">
                                                     {isPast ? (
-                                                        <div className="flex gap-2 items-center">
-                                                            <span className={`text-[10px] uppercase font-black px-2 py-1 rounded-md ${sText}`}>
-                                                                {sLabel}
-                                                            </span>
-                                                            <button 
-                                                                onClick={() => handleDeleteAppt(appt.id)}
-                                                                className="w-7 h-7 rounded-sm bg-gray-200 text-gray-500 flex items-center justify-center hover:bg-gray-300 transition-colors"
-                                                            >
-                                                                <TrashIcon />
-                                                            </button>
-                                                        </div>
+                                                        <button 
+                                                            onClick={() => handleDeleteAppt(appt.id)}
+                                                            className="w-7 h-7 rounded-sm bg-gray-200 text-gray-500 flex items-center justify-center hover:bg-gray-300 transition-colors"
+                                                        >
+                                                            <TrashIcon />
+                                                        </button>
                                                     ) : appt.status === 'pending' ? (
-                                                        <div className="flex gap-1">
-                                                            <button 
-                                                                onClick={() => updateStatus(appt.id, 'confirmed')}
-                                                                className="w-8 h-8 rounded-full bg-green-50 text-green-600 flex items-center justify-center hover:bg-green-100 active:scale-95 transition-all"
-                                                            >
-                                                                <CheckIcon />
-                                                            </button>
+                                                        <div className="flex gap-2">
                                                             <button 
                                                                 onClick={() => updateStatus(appt.id, 'cancelled')}
-                                                                className="w-8 h-8 rounded-full bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100 active:scale-95 transition-all"
+                                                                className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 font-bold border border-red-100 active:scale-95 transition-all"
                                                             >
-                                                                <XIcon />
+                                                                ✕ Refuser
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => updateStatus(appt.id, 'confirmed')}
+                                                                className="text-xs px-3 py-1.5 rounded-lg bg-green-50 text-green-600 font-bold border border-green-100 active:scale-95 transition-all"
+                                                            >
+                                                                ✓ Confirmer
                                                             </button>
                                                         </div>
                                                     ) : (
@@ -686,9 +745,6 @@ export default function Dashboard() {
                                                                     Annuler
                                                                 </button>
                                                             )}
-                                                            <span className={`text-[10px] uppercase font-black px-2 py-1 rounded-md ${sText}`}>
-                                                                {sLabel}
-                                                            </span>
                                                             {(appt.status === 'cancelled' || appt.status === 'absent') && (
                                                                 <button 
                                                                     onClick={() => handleDeleteAppt(appt.id)}
