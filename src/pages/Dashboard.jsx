@@ -83,6 +83,7 @@ export default function Dashboard() {
     const [availableSlots, setAvailableSlots] = useState([]);
     const [loadingSlots, setLoadingSlots] = useState(false);
     const [schedules, setSchedules] = useState([]); // Bug 1 Fix: Schedules state
+    const [takenSlots, setTakenSlots] = useState([]); // fix: takenSlots state
 
     // Derived states moved BEFORE useEffects to prevent ReferenceErrors
     const today = new Date();
@@ -361,26 +362,44 @@ export default function Dashboard() {
             const dayOfWeek = dateObj.getDay();
 
             // Bug 1 Fix: Use fetched schedules with fallback
-            const schedule = schedules.find(s => s.day_of_week === dayOfWeek);
+            let schedule = schedules.find(s => s.day_of_week === dayOfWeek);
             
-            // Fallback if no schedule found or defaults
-            const startStr = schedule?.start_time || '09:00';
-            const endStr = schedule?.end_time || '18:00';
-            const isOpen = schedule ? schedule.is_open : true;
+            // Fallback if no schedule found in DB
+            // Monday-Saturday: 09:00-18:00, Sunday: Closed
+            let startStr = '09:00';
+            let endStr = '18:00';
+            let isOpen = true;
+
+            if (schedule) {
+                startStr = schedule.start_time || '09:00';
+                endStr = schedule.end_time || '18:00';
+                isOpen = schedule.is_open;
+            } else {
+                // Hardcoded fallback for missing DB entries
+                if (dayOfWeek === 0) { // Sunday
+                    isOpen = false;
+                }
+            }
+
+            console.log('Schedules:', schedules);
+            console.log('Selected date:', dateStr);
 
             if (!isOpen) {
+                console.log('Generated slots: [] (Closed)');
                 setAvailableSlots([]);
                 return;
             }
 
+            const { data: { user } } = await supabase.auth.getUser();
             const { data: apptsData } = await supabase
                 .from('appointments')
                 .select('appointment_time')
-                .eq('pro_id', pro.id)
+                .eq('pro_id', user.id)
                 .eq('appointment_date', dateStr)
                 .neq('status', 'cancelled');
 
             const takenTimes = new Set((apptsData || []).map(a => a.appointment_time));
+            setTakenSlots(Array.from(takenTimes));
 
             const [startH, startM] = startStr.split(':').map(Number);
             const [endH, endM] = endStr.split(':').map(Number);
@@ -394,7 +413,7 @@ export default function Dashboard() {
 
             const slots = [];
             for (let mins = startTotal; mins < endTotal; mins += 30) {
-                // Bug 1 Fix: Filter past slots if today
+                // Filter past slots if today (now + 30m)
                 if (isToday && mins <= currentMins + 30) continue;
 
                 const h = Math.floor(mins / 60).toString().padStart(2, '0');
@@ -414,6 +433,8 @@ export default function Dashboard() {
                     slots.push({ time: timeStr, isTaken: takenTimes.has(timeStr) });
                 }
             }
+            
+            console.log('Generated slots:', slots);
             setAvailableSlots(slots);
             if (slots.length > 0 && !slots.find(s => s.time === rdvTime && !s.isTaken)) {
                 setRdvTime('');
@@ -1026,7 +1047,7 @@ export default function Dashboard() {
                                                                     onClick={() => setRdvTime(slot.time)}
                                                                     className={`py-2 px-1 rounded-lg text-sm font-bold flex flex-col items-center justify-center transition-all ${
                                                                         slot.isTaken 
-                                                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60' 
+                                                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60 border border-gray-200' 
                                                                         : rdvTime === slot.time
                                                                             ? 'bg-[#C8372D] text-white shadow-md scale-[1.02] border border-[#C8372D]'
                                                                             : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 active:scale-95'
