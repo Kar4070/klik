@@ -84,6 +84,7 @@ export default function Dashboard() {
     const [loadingSlots, setLoadingSlots] = useState(false);
     const [schedules, setSchedules] = useState([]); // Bug 1 Fix: Schedules state
     const [takenSlots, setTakenSlots] = useState([]); // fix: takenSlots state
+    const [slotMessage, setSlotMessage] = useState('');
 
     // Derived states moved BEFORE useEffects to prevent ReferenceErrors
     const today = new Date();
@@ -355,41 +356,86 @@ export default function Dashboard() {
         }
     }, [rdvDate, rdvStep, showNewRdvModal, pro, schedules]);
 
+    const generateSlots = (schedules, dateStr) => {
+        const dateObj = new Date(dateStr);
+        const dayOfWeek = dateObj.getDay();
+
+        let schedule = schedules.find(s => s.day_of_week === dayOfWeek);
+        
+        // Fallback if no schedule found in DB
+        let startStr = '09:00';
+        let endStr = '18:00';
+        let isOpen = true;
+
+        if (schedule) {
+            startStr = schedule.start_time || '09:00';
+            endStr = schedule.end_time || '18:00';
+            isOpen = schedule.is_open;
+        } else if (dayOfWeek === 0) {
+            isOpen = false;
+        }
+
+        if (!isOpen) return [];
+
+        const [startH, startM] = startStr.split(':').map(Number);
+        const [endH, endM] = endStr.split(':').map(Number);
+        const startTotal = startH * 60 + startM;
+        const endTotal = endH * 60 + endM;
+        
+        const todayStr = new Date().toLocaleDateString('en-CA');
+        const isToday = dateStr === todayStr;
+        const now = new Date();
+        const currentMins = now.getHours() * 60 + now.getMinutes();
+
+        const slots = [];
+        for (let mins = startTotal; mins < endTotal; mins += 30) {
+            if (isToday && mins <= currentMins + 30) continue;
+            
+            let isBreak = false;
+            if (schedule?.break_start && schedule?.break_end) {
+                const [bSh, bSm] = schedule.break_start.split(':').map(Number);
+                const [bEh, bEm] = schedule.break_end.split(':').map(Number);
+                const bStartTotal = bSh * 60 + bSm;
+                const bEndTotal = bEh * 60 + bEm;
+                if (mins >= bStartTotal && mins < bEndTotal) isBreak = true;
+            }
+
+            if (!isBreak) {
+                const h = Math.floor(mins / 60).toString().padStart(2, '0');
+                const m = (mins % 60).toString().padStart(2, '0');
+                slots.push({ time: `${h}:${m}`, mins });
+            }
+        }
+        return slots;
+    };
+
+    const handleDateSelect = async (date) => {
+        // Generate slots for selected date
+        const slots = generateSlots(schedules, date);
+        
+        // If no slots available (all passed) and date is today
+        const todayStr = new Date().toLocaleDateString('en-CA');
+        if (slots.length === 0 && date === todayStr) {
+            // Auto switch to tomorrow
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const tomorrowStr = tomorrow.toLocaleDateString('en-CA');
+            setRdvDate(tomorrowStr);
+            // Show message
+            setSlotMessage("Plus de créneaux aujourd'hui — affichage de demain 👇");
+        } else {
+            setRdvDate(date);
+            if (slots.length === 0) {
+                setSlotMessage("Aucun créneau disponible pour cette date.");
+            } else {
+                setSlotMessage('');
+            }
+        }
+    };
+
     const fetchSlots = async (dateStr) => {
         setLoadingSlots(true);
         try {
-            const dateObj = new Date(dateStr);
-            const dayOfWeek = dateObj.getDay();
-
-            // Bug 1 Fix: Use fetched schedules with fallback
-            let schedule = schedules.find(s => s.day_of_week === dayOfWeek);
-            
-            // Fallback if no schedule found in DB
-            // Monday-Saturday: 09:00-18:00, Sunday: Closed
-            let startStr = '09:00';
-            let endStr = '18:00';
-            let isOpen = true;
-
-            if (schedule) {
-                startStr = schedule.start_time || '09:00';
-                endStr = schedule.end_time || '18:00';
-                isOpen = schedule.is_open;
-            } else {
-                // Hardcoded fallback for missing DB entries
-                if (dayOfWeek === 0) { // Sunday
-                    isOpen = false;
-                }
-            }
-
-            console.log('Schedules:', schedules);
-            console.log('Selected date:', dateStr);
-
-            if (!isOpen) {
-                console.log('Generated slots: [] (Closed)');
-                setAvailableSlots([]);
-                return;
-            }
-
             const { data: { user } } = await supabase.auth.getUser();
             const { data: apptsData } = await supabase
                 .from('appointments')
@@ -401,42 +447,14 @@ export default function Dashboard() {
             const takenTimes = new Set((apptsData || []).map(a => a.appointment_time));
             setTakenSlots(Array.from(takenTimes));
 
-            const [startH, startM] = startStr.split(':').map(Number);
-            const [endH, endM] = endStr.split(':').map(Number);
-            const startTotal = startH * 60 + startM;
-            const endTotal = endH * 60 + endM;
+            const generatedSlots = generateSlots(schedules, dateStr);
+            const slotsWithStatus = generatedSlots.map(s => ({
+                ...s,
+                isTaken: takenTimes.has(s.time)
+            }));
             
-            const todayStr = new Date().toLocaleDateString('en-CA');
-            const isToday = dateStr === todayStr;
-            const now = new Date();
-            const currentMins = now.getHours() * 60 + now.getMinutes();
-
-            const slots = [];
-            for (let mins = startTotal; mins < endTotal; mins += 30) {
-                // Filter past slots if today (now + 30m)
-                if (isToday && mins <= currentMins + 30) continue;
-
-                const h = Math.floor(mins / 60).toString().padStart(2, '0');
-                const m = (mins % 60).toString().padStart(2, '0');
-                const timeStr = `${h}:${m}`;
-                
-                let isBreak = false;
-                if (schedule?.break_start && schedule?.break_end) {
-                    const [bSh, bSm] = schedule.break_start.split(':').map(Number);
-                    const [bEh, bEm] = schedule.break_end.split(':').map(Number);
-                    const bStartTotal = bSh * 60 + bSm;
-                    const bEndTotal = bEh * 60 + bEm;
-                    if (mins >= bStartTotal && mins < bEndTotal) isBreak = true;
-                }
-
-                if (!isBreak) {
-                    slots.push({ time: timeStr, isTaken: takenTimes.has(timeStr) });
-                }
-            }
-            
-            console.log('Generated slots:', slots);
-            setAvailableSlots(slots);
-            if (slots.length > 0 && !slots.find(s => s.time === rdvTime && !s.isTaken)) {
+            setAvailableSlots(slotsWithStatus);
+            if (slotsWithStatus.length > 0 && !slotsWithStatus.find(s => s.time === rdvTime && !s.isTaken)) {
                 setRdvTime('');
             }
         } catch (e) {
@@ -1024,11 +1042,18 @@ export default function Dashboard() {
                                                         type="date" 
                                                         className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-[#C8372D] focus:ring-4 focus:ring-[#C8372D]/10 font-bold transition-all"
                                                         value={rdvDate}
-                                                        onChange={(e) => setRdvDate(e.target.value)}
+                                                        onChange={(e) => handleDateSelect(e.target.value)}
                                                     />
                                                 </div>
                                                 <div>
                                                     <label className="block text-[11px] font-black text-gray-400 uppercase tracking-widest mb-2">Créneaux horaires</label>
+                                                    
+                                                    {slotMessage && (
+                                                      <div className="text-center text-sm text-amber-600 bg-amber-50 rounded-xl p-3 mb-3 animate-fadeIn">
+                                                        ⚠️ {slotMessage}
+                                                      </div>
+                                                    )}
+
                                                     {loadingSlots ? (
                                                         <div className="flex justify-center py-6">
                                                             <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-[#C8372D]"></div>
