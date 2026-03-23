@@ -51,9 +51,20 @@ export default function StatsPage() {
                 return;
             }
 
-            const { data: proData } = await supabase.from('pros').select('*').eq('id', user.id).single();
+            // Fix 1 — Faster navigation between pages
+            let proDataToUse = null;
+            const cachedPro = sessionStorage.getItem('klik_pro');
+            if (cachedPro) {
+                proDataToUse = JSON.parse(cachedPro);
+            } else {
+                const { data: proData } = await supabase.from('pros').select('*').eq('id', user.id).single();
+                if (proData) {
+                    sessionStorage.setItem('klik_pro', JSON.stringify(proData));
+                    proDataToUse = proData;
+                }
+            }
 
-            if (!proData) return;
+            if (!proDataToUse) return;
 
             const todayObj = new Date();
             const offset = todayObj.getTimezoneOffset() * 60000;
@@ -65,10 +76,11 @@ export default function StatsPage() {
             const mm = String(localToday.getMonth() + 1).padStart(2, '0');
             const monthStr = `${yyyy}-${mm}-01`;
 
+            // Fix 5 — Real revenue in Stats (Removed duplicated select)
             const { data: appts } = await supabase
                 .from('appointments')
                 .select('*, services(name, price)')
-                .eq('pro_id', proData.id)
+                .eq('pro_id', proDataToUse.id)
                 .gte('appointment_date', monthStr);
 
             const thisMonthAppts = appts || [];
@@ -89,7 +101,8 @@ export default function StatsPage() {
 
                 if (a.client_id) uniqueClients.add(a.client_id);
 
-                if (a.status === 'confirmed' || a.status === 'completed') {
+                // Fix 5 — Real revenue in Stats: calculate revenue only from appointments with status = 'confirmed'
+                if (a.status === 'confirmed') {
                     monthRevenue += price;
                     respectCountMonth++;
                     if (isToday) todayRevenue += price;
@@ -122,7 +135,7 @@ export default function StatsPage() {
             const { count: regularClientsCount } = await supabase
                 .from('clients')
                 .select('*', { count: 'exact', head: true })
-                .eq('pro_id', proData.id)
+                .eq('pro_id', proDataToUse.id)
                 .gt('visit_count', 2);
 
             setStats({

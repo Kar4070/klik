@@ -58,6 +58,7 @@ export default function Dashboard() {
     const [pro, setPro] = useState(null);
     const [services, setServices] = useState([]);
     const [appointments, setAppointments] = useState([]);
+    const [selectedTab, setSelectedTab] = useState('Aujourd\'hui');
     
     const [loading, setLoading] = useState(true);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -91,47 +92,55 @@ export default function Dashboard() {
     const daysRemaining = pro?.trial_ends_at ? Math.ceil((trialEndsAt - today) / (1000 * 60 * 60 * 24)) : 0;
 
     const nowMinutes = today.getHours() * 60 + today.getMinutes();
-    const todayFormatted = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const targetDateObj = new Date();
+    if (selectedTab === 'Demain') {
+        targetDateObj.setDate(targetDateObj.getDate() + 1);
+    }
+    const targetFormatted = `${targetDateObj.getFullYear()}-${String(targetDateObj.getMonth() + 1).padStart(2, '0')}-${String(targetDateObj.getDate()).padStart(2, '0')}`;
     
-    // todayAppointments replaces the logic that used to be called appointments
-    const todayAppointments = React.useMemo(() => appointments.filter(a => a.appointment_date === todayFormatted), [appointments, todayFormatted]);
-    const futureAppts = appointments;
+    // Use targetFormatted for filtering current view
+    const visibleAppointments = React.useMemo(() => appointments.filter(a => a.appointment_date === targetFormatted), [appointments, targetFormatted]);
 
-    // Find next appointment
-    const upcomingAppts = futureAppts.filter(a => {
+    // Find next appointment from currently fetched appointments
+    const upcomingAppts = appointments.filter(a => {
         if (a.status === 'cancelled' || a.status === 'absent') return false;
-        if (a.appointment_date === todayFormatted) {
+        
+        const apptDateObj = new Date(a.appointment_date);
+        const todayDateObj = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        
+        if (apptDateObj.getTime() === todayDateObj.getTime()) {
             const [h, m] = a.appointment_time.split(':').map(Number);
             return (h * 60 + m) >= nowMinutes;
         }
-        return a.appointment_date > todayFormatted;
+        return apptDateObj > todayDateObj;
     });
     const nextAppointment = upcomingAppts.length > 0 ? upcomingAppts[0] : null;
 
     let nextApptText = "";
     if (nextAppointment) {
-        if (nextAppointment.appointment_date === todayFormatted) {
+        const h_m = nextAppointment.appointment_time.replace(':', 'h');
+        const aDate = new Date(nextAppointment.appointment_date);
+        const tDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        
+        if (aDate.getTime() === tDate.getTime()) {
             const [h, m] = nextAppointment.appointment_time.split(':').map(Number);
             const diff = (h * 60 + m) - nowMinutes;
             if (diff <= 60 && diff >= 0) {
                 nextApptText = `Dans ${diff} min`;
             } else {
-                nextApptText = `À ${nextAppointment.appointment_time.replace(':', 'h')}`;
+                nextApptText = `À ${h_m}`;
             }
         } else {
-            const apptDate = new Date(nextAppointment.appointment_date);
-            const tomorrow = new Date(today);
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            if (apptDate.toDateString() === tomorrow.toDateString()) {
-                nextApptText = `Demain à ${nextAppointment.appointment_time.replace(':', 'h')}`;
+            const tomorrowDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+            if (aDate.getTime() === tomorrowDate.getTime()) {
+                nextApptText = `Demain à ${h_m}`;
             } else {
-                const dayStr = apptDate.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
-                nextApptText = `${dayStr.charAt(0).toUpperCase() + dayStr.slice(1)} à ${nextAppointment.appointment_time.replace(':', 'h')}`;
+                nextApptText = `${aDate.toLocaleDateString('fr-FR', { weekday: 'short' })} à ${h_m}`;
             }
         }
     }
 
-    const totalRevenue = todayAppointments
+    const totalRevenue = visibleAppointments
         .filter(a => a.status === 'confirmed')
         .reduce((sum, a) => sum + Number(a.services?.price || 0), 0);
 
@@ -140,11 +149,14 @@ export default function Dashboard() {
         if ('Notification' in window && Notification.permission !== 'granted') {
             Notification.requestPermission();
         }
-        fetchDashboardData();
     }, []);
 
     useEffect(() => {
-        if (todayAppointments.length === 0) return;
+        fetchDashboardData();
+    }, [selectedTab]);
+
+    useEffect(() => {
+        if (visibleAppointments.length === 0) return;
         
         const checkNotifications = () => {
             if (!('Notification' in window) || Notification.permission !== 'granted') return;
@@ -152,7 +164,7 @@ export default function Dashboard() {
             const now = new Date();
             const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
-            todayAppointments.forEach(appt => {
+            visibleAppointments.forEach(appt => {
                 if (appt.status !== 'confirmed') return;
 
                 const [h, m] = appt.appointment_time.split(':').map(Number);
@@ -177,7 +189,7 @@ export default function Dashboard() {
         checkNotifications();
         
         return () => clearInterval(interval);
-    }, [todayAppointments]);
+    }, [visibleAppointments]);
 
     const fetchDashboardData = async () => {
         try {
@@ -189,29 +201,51 @@ export default function Dashboard() {
                 return;
             }
 
-            const { data: proData } = await supabase.from('pros').select('*').eq('id', user.id).single();
-            if (!proData) throw new Error("Pro not found");
-            setPro(proData);
+            // Fix 1 — Faster navigation between pages
+            let proDataToUse = null;
+            const cachedPro = sessionStorage.getItem('klik_pro');
+            if (cachedPro) {
+                proDataToUse = JSON.parse(cachedPro);
+                setPro(proDataToUse);
+            } else {
+                const { data: proData } = await supabase.from('pros').select('*').eq('id', user.id).single();
+                if (proData) {
+                    setPro(proData);
+                    sessionStorage.setItem('klik_pro', JSON.stringify(proData));
+                    proDataToUse = proData;
+                }
+            }
 
-            const { data: servicesData } = await supabase.from('services').select('*').eq('pro_id', proData.id);
-            setServices(servicesData || []);
+            if (!proDataToUse) return;
 
-            const todayFormattedStr = new Date().toISOString().split('T')[0];
+            const cachedServices = sessionStorage.getItem('klik_services');
+            if (cachedServices) {
+                setServices(JSON.parse(cachedServices));
+            } else {
+                const { data: servicesData } = await supabase.from('services').select('*').eq('pro_id', proDataToUse.id);
+                const sData = servicesData || [];
+                setServices(sData);
+                sessionStorage.setItem('klik_services', JSON.stringify(sData));
+            }
+
+            // Fix 2 — Show tomorrow's appointments
+            const targetDateObj = new Date();
+            if (selectedTab === 'Demain') {
+                targetDateObj.setDate(targetDateObj.getDate() + 1);
+            }
+            const targetFormattedStr = targetDateObj.toLocaleDateString('en-CA'); // YYYY-MM-DD
+            
             const { data: apptsData } = await supabase
                 .from('appointments')
-                .select(`
-                    *,
-                    services (*)
-                `)
-                .eq('pro_id', proData.id)
-                .gte('appointment_date', todayFormattedStr)
-                .order('appointment_date', { ascending: true })
+                .select('*, services(name, price, duration_minutes)')
+                .eq('pro_id', proDataToUse.id)
+                .eq('appointment_date', targetFormattedStr)
                 .order('appointment_time', { ascending: true });
             
             setAppointments(apptsData || []);
 
             // Fetch Clients
-            const { data: clientsData } = await supabase.from('clients').select('*').eq('pro_id', proData.id);
+            const { data: clientsData } = await supabase.from('clients').select('*').eq('pro_id', proDataToUse.id);
             setClients(clientsData || []);
         } catch (err) {
             console.error(err);
@@ -294,8 +328,14 @@ export default function Dashboard() {
             const startTotal = startH * 60 + startM;
             const endTotal = endH * 60 + endM;
             
+            const isToday = dateStr === new Date().toLocaleDateString('en-CA');
+            const now = new Date();
+            const currentMins = now.getHours() * 60 + now.getMinutes();
+
             const slots = [];
             for (let mins = startTotal; mins < endTotal; mins += 30) {
+                if (isToday && mins <= currentMins + 30) continue;
+
                 const h = Math.floor(mins / 60).toString().padStart(2, '0');
                 const m = (mins % 60).toString().padStart(2, '0');
                 const timeStr = `${h}:${m}`;
@@ -370,6 +410,7 @@ export default function Dashboard() {
 
             if (apptErr) throw apptErr;
 
+            // Fix 3 — Auto navigate after creating appointment
             setShowNewRdvModal(false);
             setRdvStep(1);
             setSelectedClient(null);
@@ -380,7 +421,21 @@ export default function Dashboard() {
             setSearchQuery('');
             setRdvNotes('');
             
-            await fetchDashboardData();
+            const tomorrowStr = new Date(Date.now() + 86400000).toLocaleDateString('en-CA');
+            const todayStr = new Date().toLocaleDateString('en-CA');
+            
+            if (rdvDate === tomorrowStr) {
+                setSelectedTab('Demain');
+            } else if (rdvDate === todayStr) {
+                if (selectedTab === 'Aujourd\'hui') {
+                    await fetchDashboardData();
+                } else {
+                    setSelectedTab('Aujourd\'hui');
+                }
+            } else {
+                // For other dates, just fetch if we're on the right view, but shouldn't happen with simple selector
+                await fetchDashboardData();
+            }
             alert("RDV créé !");
         } catch (e) {
             console.error(e);
@@ -426,9 +481,25 @@ export default function Dashboard() {
                         <p className="text-lg font-black">{fullDate}</p>
                     </div>
                     <div className="z-10 text-right">
-                        <p className="text-4xl font-black leading-none">{todayAppointments.length}</p>
-                        <p className="text-xs font-semibold opacity-90 mt-1">RDV Aujourd'hui</p>
+                        <p className="text-4xl font-black leading-none">{visibleAppointments.length}</p>
+                        <p className="text-xs font-semibold opacity-90 mt-1">RDV {selectedTab}</p>
                     </div>
+                </div>
+
+                {/* Date Tabs */}
+                <div className="flex bg-white rounded-[1rem] p-1 shadow-sm border border-gray-100 mt-2">
+                    <button 
+                        onClick={() => setSelectedTab('Aujourd\'hui')}
+                        className={`flex-1 py-2 text-sm font-bold rounded-[0.8rem] transition-all ${selectedTab === 'Aujourd\'hui' ? 'bg-[#C8372D] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+                    >
+                        Aujourd'hui
+                    </button>
+                    <button 
+                        onClick={() => setSelectedTab('Demain')}
+                        className={`flex-1 py-2 text-sm font-bold rounded-[0.8rem] transition-all ${selectedTab === 'Demain' ? 'bg-[#C8372D] text-white shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+                    >
+                        Demain
+                    </button>
                 </div>
 
                 {/* Block 2: Trial period */}
@@ -499,7 +570,7 @@ export default function Dashboard() {
                 <div className="bg-white rounded-[1.5rem] p-4 shadow-sm border border-gray-100 flex-1">
                     <div className="flex justify-between items-center mb-4 px-1">
                         <h2 className="text-lg font-black text-gray-900">
-                            Liste du jour
+                            {selectedTab === 'Demain' ? 'Liste de demain' : 'Liste du jour'}
                         </h2>
                         <span className="bg-green-50 text-green-700 font-bold px-3 py-1 rounded-lg text-sm border border-green-100 shadow-sm">
                             {totalRevenue} DT
@@ -507,16 +578,16 @@ export default function Dashboard() {
                     </div>
 
                     <div className="flex flex-col gap-3">
-                        {todayAppointments.length === 0 ? (
+                        {visibleAppointments.length === 0 ? (
                             <div className="text-center py-8 text-gray-400 font-medium text-sm">
-                                Aucun rendez-vous aujourd'hui
+                                Aucun rendez-vous {selectedTab === 'Demain' ? 'demain' : 'aujourd\'hui'}
                             </div>
                         ) : (
                             (() => {
                                 const activeAppointments = [];
                                 const pastAppointments = [];
                                 
-                                todayAppointments.forEach(appt => {
+                                visibleAppointments.forEach(appt => {
                                     const [h, m] = appt.appointment_time.split(':').map(Number);
                                     const apptMinutes = h * 60 + m;
                                     if (nowMinutes - apptMinutes > 30) {

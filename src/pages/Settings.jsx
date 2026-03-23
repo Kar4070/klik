@@ -83,14 +83,33 @@ export default function Settings() {
             }
             setUser(user);
 
-            // Fetch Pro
-            const { data: proData } = await supabase.from('pros').select('*').eq('id', user.id).single();
-            if (!proData) throw new Error("Pro fetch failed");
-            setPro(proData);
+            // Fix 1 — Faster navigation between pages
+            let proDataToUse = null;
+            const cachedPro = sessionStorage.getItem('klik_pro');
+            if (cachedPro) {
+                proDataToUse = JSON.parse(cachedPro);
+                setPro(proDataToUse);
+            } else {
+                const { data: proData } = await supabase.from('pros').select('*').eq('id', user.id).single();
+                if (proData) {
+                    setPro(proData);
+                    sessionStorage.setItem('klik_pro', JSON.stringify(proData));
+                    proDataToUse = proData;
+                }
+            }
+
+            if (!proDataToUse) return;
 
             // Fetch Services
-            const { data: servicesData } = await supabase.from('services').select('*').eq('pro_id', proData.id);
-            setServices(servicesData || []);
+            const cachedServices = sessionStorage.getItem('klik_services');
+            if (cachedServices) {
+                setServices(JSON.parse(cachedServices));
+            } else {
+                const { data: servicesData } = await supabase.from('services').select('*').eq('pro_id', proDataToUse.id);
+                const sData = servicesData || [];
+                setServices(sData);
+                sessionStorage.setItem('klik_services', JSON.stringify(sData));
+            }
 
             // Fetch Schedules
             const { data: schedData } = await supabase

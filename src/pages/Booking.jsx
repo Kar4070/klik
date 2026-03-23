@@ -65,7 +65,7 @@ export default function Booking() {
             if (proError) throw proError;
             setPro(proData);
             
-            const { data: servData } = await supabase.from('services').select('*').eq('pro_id', proId).order('created_at', { ascending: true });
+            const { data: servData } = await supabase.from('services').select('id, name, price, duration_minutes').eq('pro_id', proId).order('created_at', { ascending: true });
             setServices(servData || []);
             
             const { data: schedData } = await supabase.from('schedules').select('*').eq('pro_id', proId);
@@ -143,16 +143,26 @@ export default function Booking() {
         const breakTotalEnd = breakEnd[0] * 60 + breakEnd[1];
 
         const isToday = selectedDate === new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local
-        const nowTotalMins = new Date().getHours() * 60 + new Date().getMinutes();
+        const now = new Date();
+        const currentMins = now.getHours() * 60 + now.getMinutes();
 
         while ((currentH * 60 + currentM) < endTotal) {
             const timeStr = `${String(currentH).padStart(2, '0')}:${String(currentM).padStart(2, '0')}`;
             const slotMins = currentH * 60 + currentM;
             
             const isBreak = slotMins >= breakTotalStart && slotMins < breakTotalEnd;
-            const isPast = isToday && slotMins <= nowTotalMins;
+            
+            // Fix 4 — Hide past time slots in booking page
+            if (isToday && slotMins <= currentMins + 30) {
+                currentM += 30;
+                if (currentM >= 60) {
+                    currentH += 1;
+                    currentM -= 60;
+                }
+                continue;
+            }
 
-            if (!isBreak && !isPast) {
+            if (!isBreak) {
                 slots.push(timeStr);
             }
             
@@ -277,7 +287,7 @@ export default function Booking() {
                                         onClick={() => setSelectedService(s)}
                                         className={`bg-white p-4 rounded-2xl cursor-pointer transition-all border-2 ${selectedService?.id === s.id ? 'border-[#C8372D] shadow-md scale-[1.02]' : 'border-transparent shadow-sm hover:border-gray-200'}`}
                                     >
-                                        <div className="text-3xl mb-3">{s.icon || '✂️'}</div>
+                                        <div className="text-3xl mb-3">✂️</div>
                                         <p className="font-bold text-sm text-gray-900 leading-tight mb-2">{s.name}</p>
                                         <div className="flex flex-wrap gap-1.5 mt-auto">
                                             <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-sm">{s.duration_minutes} min</span>
@@ -440,7 +450,7 @@ export default function Booking() {
                                 <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-3 relative z-10">Résumé</h3>
                                 
                                 <div className="flex items-center gap-3 mb-4 border-b border-white/10 pb-4 relative z-10">
-                                    <div className="text-3xl bg-white/10 p-2 rounded-xl">{selectedService?.icon}</div>
+                                    <div className="text-3xl bg-white/10 p-2 rounded-xl">✂️</div>
                                     <div>
                                         <p className="font-bold text-lg leading-tight">{selectedService?.name}</p>
                                         <p className="text-xs text-gray-400">{pro?.name}</p>
