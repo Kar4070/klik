@@ -82,6 +82,7 @@ export default function Dashboard() {
     const [savingRdv, setSavingRdv] = useState(false);
     const [availableSlots, setAvailableSlots] = useState([]);
     const [loadingSlots, setLoadingSlots] = useState(false);
+    const [schedules, setSchedules] = useState([]); // Bug 1 Fix: Schedules state
 
     // Derived states moved BEFORE useEffects to prevent ReferenceErrors
     const today = new Date();
@@ -334,10 +335,24 @@ export default function Dashboard() {
     };
 
     useEffect(() => {
+        if (showNewRdvModal && pro?.id) {
+            fetchSchedules(pro.id);
+        }
+    }, [showNewRdvModal, pro?.id]);
+
+    const fetchSchedules = async (proId) => {
+        const { data } = await supabase
+            .from('schedules')
+            .select('*')
+            .eq('pro_id', proId);
+        setSchedules(data || []);
+    };
+
+    useEffect(() => {
         if (showNewRdvModal && rdvStep === 3 && rdvDate && pro) {
             fetchSlots(rdvDate);
         }
-    }, [rdvDate, rdvStep, showNewRdvModal, pro]);
+    }, [rdvDate, rdvStep, showNewRdvModal, pro, schedules]);
 
     const fetchSlots = async (dateStr) => {
         setLoadingSlots(true);
@@ -345,14 +360,15 @@ export default function Dashboard() {
             const dateObj = new Date(dateStr);
             const dayOfWeek = dateObj.getDay();
 
-            const { data: schedData } = await supabase
-                .from('schedules')
-                .select('*')
-                .eq('pro_id', pro.id)
-                .eq('day_of_week', dayOfWeek)
-                .single();
+            // Bug 1 Fix: Use fetched schedules with fallback
+            const schedule = schedules.find(s => s.day_of_week === dayOfWeek);
+            
+            // Fallback if no schedule found or defaults
+            const startStr = schedule?.start_time || '09:00';
+            const endStr = schedule?.end_time || '18:00';
+            const isOpen = schedule ? schedule.is_open : true;
 
-            if (!schedData || !schedData.is_open) {
+            if (!isOpen) {
                 setAvailableSlots([]);
                 return;
             }
@@ -366,17 +382,19 @@ export default function Dashboard() {
 
             const takenTimes = new Set((apptsData || []).map(a => a.appointment_time));
 
-            const [startH, startM] = schedData.start_time.split(':').map(Number);
-            const [endH, endM] = schedData.end_time.split(':').map(Number);
+            const [startH, startM] = startStr.split(':').map(Number);
+            const [endH, endM] = endStr.split(':').map(Number);
             const startTotal = startH * 60 + startM;
             const endTotal = endH * 60 + endM;
             
-            const isToday = dateStr === new Date().toLocaleDateString('en-CA');
+            const todayStr = new Date().toLocaleDateString('en-CA');
+            const isToday = dateStr === todayStr;
             const now = new Date();
             const currentMins = now.getHours() * 60 + now.getMinutes();
 
             const slots = [];
             for (let mins = startTotal; mins < endTotal; mins += 30) {
+                // Bug 1 Fix: Filter past slots if today
                 if (isToday && mins <= currentMins + 30) continue;
 
                 const h = Math.floor(mins / 60).toString().padStart(2, '0');
@@ -384,9 +402,9 @@ export default function Dashboard() {
                 const timeStr = `${h}:${m}`;
                 
                 let isBreak = false;
-                if (schedData.break_start && schedData.break_end) {
-                    const [bSh, bSm] = schedData.break_start.split(':').map(Number);
-                    const [bEh, bEm] = schedData.break_end.split(':').map(Number);
+                if (schedule?.break_start && schedule?.break_end) {
+                    const [bSh, bSm] = schedule.break_start.split(':').map(Number);
+                    const [bEh, bEm] = schedule.break_end.split(':').map(Number);
                     const bStartTotal = bSh * 60 + bSm;
                     const bEndTotal = bEh * 60 + bEm;
                     if (mins >= bStartTotal && mins < bEndTotal) isBreak = true;
