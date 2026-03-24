@@ -50,6 +50,11 @@ const TrashIcon = () => (
         <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
     </svg>
 );
+const EditIcon = () => (
+    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+    </svg>
+);
 
 const calculateDaysRemaining = (trialEndsAt) => {
   if (!trialEndsAt) return 0
@@ -94,6 +99,23 @@ export default function Dashboard() {
     const [schedules, setSchedules] = useState([]); // Bug 1 Fix: Schedules state
     const [takenSlots, setTakenSlots] = useState([]); // fix: takenSlots state
     const [slotMessage, setSlotMessage] = useState('');
+
+    // Toast state
+    const [toast, setToast] = useState(null);
+    const showToast = (msg) => {
+        setToast(msg);
+        setTimeout(() => setToast(null), 3000);
+    };
+
+    // Edit modal states
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editAppt, setEditAppt] = useState(null);
+    const [editDate, setEditDate] = useState('');
+    const [editTime, setEditTime] = useState('');
+    const [editService, setEditService] = useState(null);
+    const [editSlots, setEditSlots] = useState([]);
+    const [loadingEditSlots, setLoadingEditSlots] = useState(false);
+    const [savingEdit, setSavingEdit] = useState(false);
 
     // Derived states moved BEFORE useEffects to prevent ReferenceErrors
     const today = new Date();
@@ -518,7 +540,7 @@ export default function Dashboard() {
 
             if (apptErr) throw apptErr;
 
-            // Fix 3 — Auto navigate after creating appointment
+            // Auto-close modal, reset state, refresh list
             setShowNewRdvModal(false);
             setRdvStep(1);
             setSelectedClient(null);
@@ -528,10 +550,10 @@ export default function Dashboard() {
             setClientPhone('');
             setSearchQuery('');
             setRdvNotes('');
-            
+
             const tomorrowStr = new Date(Date.now() + 86400000).toLocaleDateString('en-CA');
             const todayStr = new Date().toLocaleDateString('en-CA');
-            
+
             if (rdvDate === tomorrowStr) {
                 setSelectedTab('Demain');
             } else if (rdvDate === todayStr) {
@@ -541,15 +563,89 @@ export default function Dashboard() {
                     setSelectedTab('Aujourd\'hui');
                 }
             } else {
-                // For other dates, just fetch if we're on the right view, but shouldn't happen with simple selector
                 await fetchDashboardData();
             }
-            alert("RDV créé !");
+            showToast('✅ RDV créé avec succès !');
         } catch (e) {
             console.error(e);
-            alert("Erreur lors de la création.");
+            showToast('❌ Erreur lors de la création.');
         } finally {
             setSavingRdv(false);
+        }
+    };
+
+    const openEditModal = async (appt) => {
+        setEditAppt(appt);
+        setEditDate(appt.appointment_date);
+        setEditTime(appt.appointment_time);
+        setEditService(services.find(s => s.id === appt.service_id) || null);
+        setShowEditModal(true);
+        // Fetch slots for edit
+        setLoadingEditSlots(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            const { data: apptsData } = await supabase
+                .from('appointments')
+                .select('appointment_time')
+                .eq('pro_id', user.id)
+                .eq('appointment_date', appt.appointment_date)
+                .neq('status', 'cancelled')
+                .neq('id', appt.id);
+            const takenTimes = new Set((apptsData || []).map(a => a.appointment_time));
+            const generated = generateSlots(schedules, appt.appointment_date).map(s => ({
+                ...s,
+                isTaken: takenTimes.has(s.time)
+            }));
+            setEditSlots(generated);
+        } catch (e) { console.error(e); setEditSlots([]); }
+        finally { setLoadingEditSlots(false); }
+    };
+
+    const handleEditDateChange = async (date) => {
+        setEditDate(date);
+        setEditTime('');
+        setLoadingEditSlots(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            const { data: apptsData } = await supabase
+                .from('appointments')
+                .select('appointment_time')
+                .eq('pro_id', user.id)
+                .eq('appointment_date', date)
+                .neq('status', 'cancelled')
+                .neq('id', editAppt.id);
+            const takenTimes = new Set((apptsData || []).map(a => a.appointment_time));
+            const generated = generateSlots(schedules, date).map(s => ({
+                ...s,
+                isTaken: takenTimes.has(s.time)
+            }));
+            setEditSlots(generated);
+        } catch (e) { console.error(e); setEditSlots([]); }
+        finally { setLoadingEditSlots(false); }
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editDate || !editTime || !editService) return;
+        setSavingEdit(true);
+        try {
+            const { error } = await supabase
+                .from('appointments')
+                .update({
+                    appointment_date: editDate,
+                    appointment_time: editTime,
+                    service_id: editService.id
+                })
+                .eq('id', editAppt.id);
+            if (error) throw error;
+            setShowEditModal(false);
+            setEditAppt(null);
+            await fetchDashboardData();
+            showToast('✅ RDV modifié !');
+        } catch (e) {
+            console.error(e);
+            showToast('❌ Erreur lors de la modification.');
+        } finally {
+            setSavingEdit(false);
         }
     };
 
@@ -813,6 +909,15 @@ export default function Dashboard() {
                                                         </div>
                                                     ) : (
                                                         <div className="flex gap-2 items-center">
+                                                            {/* Edit button */}
+                                                            {(appt.status === 'confirmed' || appt.status === 'pending') && (
+                                                                <button
+                                                                    onClick={() => openEditModal(appt)}
+                                                                    className="w-7 h-7 rounded-md bg-blue-50 text-blue-500 flex items-center justify-center hover:bg-blue-100 transition-colors active:scale-95"
+                                                                >
+                                                                    <EditIcon />
+                                                                </button>
+                                                            )}
                                                             {appt.status === 'confirmed' && (
                                                                 <button 
                                                                     onClick={() => handleCancelAppt(appt.id)}
@@ -831,6 +936,7 @@ export default function Dashboard() {
                                                             )}
                                                         </div>
                                                     )}
+
                                                 </div>
                                             </div>
                                         </div>
@@ -1184,6 +1290,109 @@ export default function Dashboard() {
                                 )}
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {/* Edit RDV Modal */}
+                {showEditModal && editAppt && (
+                    <div className="fixed inset-0 z-[200] max-w-[390px] mx-auto flex flex-col justify-end">
+                        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowEditModal(false)}></div>
+                        <div className="bg-[#F4F1EC] rounded-t-[2rem] flex flex-col shadow-2xl relative z-10 animate-slideUp overflow-hidden">
+                            <div className="w-full flex justify-center pt-4 pb-2 bg-white rounded-t-[2rem]">
+                                <div className="w-12 h-1.5 bg-gray-200 rounded-full"></div>
+                            </div>
+                            <div className="px-6 py-4 bg-white border-b border-gray-100 flex items-center justify-between">
+                                <h3 className="font-black text-xl text-gray-900">Modifier le RDV</h3>
+                                <button onClick={() => setShowEditModal(false)} className="p-2 bg-gray-100 rounded-full"><XIcon /></button>
+                            </div>
+                            <div className="p-6 flex flex-col gap-5">
+                                {/* Client info (read-only) */}
+                                <div className="bg-white rounded-2xl p-4 border border-gray-100">
+                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-1">Client</p>
+                                    <p className="font-bold text-gray-900">{editAppt.client_name}</p>
+                                </div>
+
+                                {/* Service selector */}
+                                <div>
+                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-2">Service</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {services.map(s => (
+                                            <div
+                                                key={s.id}
+                                                onClick={() => setEditService(s)}
+                                                className={`bg-white p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                                                    editService?.id === s.id
+                                                        ? 'border-[#C8372D] shadow-md shadow-[#C8372D]/10'
+                                                        : 'border-transparent shadow-sm hover:border-gray-200'
+                                                }`}
+                                            >
+                                                <p className="font-bold text-sm text-gray-900 leading-tight">{s.name}</p>
+                                                <p className="text-[10px] text-gray-500 font-bold mt-1">{s.duration_minutes} min • {s.price} DT</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Date */}
+                                <div>
+                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-2">Date</p>
+                                    <input
+                                        type="date"
+                                        className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-[#C8372D] font-bold"
+                                        value={editDate}
+                                        onChange={(e) => handleEditDateChange(e.target.value)}
+                                    />
+                                </div>
+
+                                {/* Time slots */}
+                                <div>
+                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-2">Créneau</p>
+                                    {loadingEditSlots ? (
+                                        <div className="flex justify-center py-4">
+                                            <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-[#C8372D]"></div>
+                                        </div>
+                                    ) : editSlots.length === 0 ? (
+                                        <div className="text-center py-3 bg-white rounded-xl text-gray-400 text-sm font-medium">Aucun créneau disponible.</div>
+                                    ) : (
+                                        <div className="grid grid-cols-3 gap-2 max-h-[160px] overflow-y-auto pr-1">
+                                            {editSlots.map((slot, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    disabled={slot.isTaken}
+                                                    onClick={() => setEditTime(slot.time)}
+                                                    className={`py-2 px-1 rounded-lg text-sm font-bold flex flex-col items-center transition-all ${
+                                                        slot.isTaken
+                                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                                                            : editTime === slot.time
+                                                                ? 'bg-[#C8372D] text-white shadow-md scale-[1.02]'
+                                                                : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 active:scale-95'
+                                                    }`}
+                                                >
+                                                    <span>{slot.time}</span>
+                                                    <span className="text-[9px] uppercase mt-0.5 opacity-80">{slot.isTaken ? 'Réservé' : 'Libre'}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <button
+                                    onClick={handleSaveEdit}
+                                    disabled={savingEdit || !editDate || !editTime || !editService}
+                                    className="w-full bg-[#C8372D] text-white font-bold py-4 rounded-xl shadow-lg shadow-[#C8372D]/25 disabled:opacity-60 active:scale-95 transition-all"
+                                >
+                                    {savingEdit ? 'Sauvegarde...' : '✓ Enregistrer les modifications'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Toast */}
+                {toast && (
+                    <div className="fixed bottom-36 left-1/2 -translate-x-1/2 z-[300] bg-gray-900 text-white text-sm font-bold px-5 py-3 rounded-full shadow-xl animate-fadeIn whitespace-nowrap">
+                        {toast}
                     </div>
                 )}
             </div>
