@@ -66,22 +66,21 @@ export default function StatsPage() {
 
             if (!proDataToUse) return;
 
-            const todayObj = new Date();
-            const offset = todayObj.getTimezoneOffset() * 60000;
-            const localToday = new Date(todayObj.getTime() - offset);
-            const todayStr = localToday.toISOString().split('T')[0];
-            
-            // Generate robust month string YYYY-MM
-            const yyyy = localToday.getFullYear();
-            const mm = String(localToday.getMonth() + 1).padStart(2, '0');
-            const monthStr = `${yyyy}-${mm}-01`;
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
+            const todayStr = now.toISOString().split('T')[0];
 
-            // Fix 5 — Real revenue in Stats (Removed duplicated select)
+            const startOfMonth = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
+            const endOfMonth = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
+
+            // Fix 4 — Fetch ALL appointments for stats (not just today)
             const { data: appts } = await supabase
                 .from('appointments')
-                .select('*, services(name, price)')
+                .select('*, services(name, price, duration_minutes)')
                 .eq('pro_id', proDataToUse.id)
-                .gte('appointment_date', monthStr);
+                .gte('appointment_date', startOfMonth)
+                .lte('appointment_date', endOfMonth);
 
             const thisMonthAppts = appts || [];
 
@@ -101,18 +100,23 @@ export default function StatsPage() {
 
                 if (a.client_id) uniqueClients.add(a.client_id);
 
-                // Fix 5 — Real revenue in Stats: calculate revenue only from appointments with status = 'confirmed'
+                // Fix 5 — Real revenue: only status = 'confirmed'
                 if (a.status === 'confirmed') {
                     monthRevenue += price;
                     respectCountMonth++;
                     if (isToday) todayRevenue += price;
                 } else if (a.status === 'absent') {
                     absentCountMonth++;
-                    if (isToday) {
-                        absentCountToday++;
-                        lostRevenueToday += price;
-                    }
-                } else if (a.status === 'cancelled') {
+                }
+
+                // Fix 1 — Manque à gagner (today)
+                if (isToday && (a.status === 'absent' || a.status === 'cancelled')) {
+                    absentCountToday++;
+                    lostRevenueToday += price;
+                }
+
+                // Fix 2 — Annulés ce mois (absent or cancelled)
+                if (a.status === 'cancelled' || a.status === 'absent') {
                     cancelledSumMonth++;
                 }
 
@@ -121,14 +125,17 @@ export default function StatsPage() {
                 }
             });
 
-            const totalApptsMonth = thisMonthAppts.length;
-            const successRateMonth = totalApptsMonth > 0 ? Math.round((respectCountMonth / totalApptsMonth) * 100) : 0;
+            // Fix 3 — Stats hero counts
+            const totalApptsMonth = thisMonthAppts.filter(a => a.status !== 'cancelled').length;
+            const successRateMonth = (respectCountMonth + absentCountMonth) > 0 
+                ? Math.round((respectCountMonth / (respectCountMonth + absentCountMonth)) * 100) 
+                : 0;
             const avgPerRdv = respectCountMonth > 0 ? Math.round(monthRevenue / respectCountMonth) : 0;
 
             const serviceStats = Object.keys(serviceCounts).map(name => ({
                 name,
                 count: serviceCounts[name],
-                percentage: Math.round((serviceCounts[name] / totalApptsMonth) * 100)
+                percentage: totalApptsMonth > 0 ? Math.round((serviceCounts[name] / totalApptsMonth) * 100) : 0
             })).sort((a,b) => b.count - a.count).slice(0, 5); // top 5 demandés
 
             // Regular clients fetching (visited more than 2 times total)
