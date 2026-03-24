@@ -65,6 +65,14 @@ const calculateDaysRemaining = (trialEndsAt) => {
   return diffDays > 0 ? diffDays : 0
 }
 
+const getTodayDate = () => {
+  const today = new Date()
+  const year = today.getFullYear()
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 export default function Dashboard() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -90,7 +98,7 @@ export default function Dashboard() {
     const [newClientName, setNewClientName] = useState('');
     const [clientPhone, setClientPhone] = useState('');
     const [selectedService, setSelectedService] = useState(null);
-    const [rdvDate, setRdvDate] = useState(new Date().toISOString().split('T')[0]);
+    const [rdvDate, setRdvDate] = useState(getTodayDate());
     const [rdvTime, setRdvTime] = useState('');
     const [rdvNotes, setRdvNotes] = useState('');
     const [savingRdv, setSavingRdv] = useState(false);
@@ -649,6 +657,16 @@ export default function Dashboard() {
         }
     };
 
+    const handleOpenModal = () => {
+        setRdvDate(getTodayDate());
+        setRdvTime('');
+        setSelectedService(null);
+        setSelectedClient(null);
+        setIsNewClient(false);
+        setRdvStep(1);
+        setShowNewRdvModal(true);
+    };
+
     if (loading) {
         return <div className="min-h-screen bg-[#F4F1EC] flex items-center justify-center">
             <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-[#C8372D]"></div>
@@ -980,7 +998,7 @@ export default function Dashboard() {
                 
                 {/* Block 5: FAB button */}
                 <button 
-                    onClick={() => setShowNewRdvModal(true)}
+                    onClick={handleOpenModal}
                     className="fixed bottom-24 right-4 z-40 bg-[#C8372D] text-white px-5 py-3.5 rounded-full font-bold shadow-xl shadow-[#C8372D]/30 flex items-center gap-2 active:scale-95 transition-transform border border-white/20"
                 >
                     <span className="text-lg leading-none mt-[-2px]">+</span> Nouveau RDV
