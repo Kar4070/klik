@@ -1295,39 +1295,43 @@ export default function Dashboard() {
 
                 {/* Edit RDV Modal */}
                 {showEditModal && editAppt && (
-                    <div className="fixed inset-0 z-[200] max-w-[390px] mx-auto flex flex-col justify-end">
+                    <div className="fixed inset-0 z-[200] flex items-end justify-center">
                         <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowEditModal(false)}></div>
-                        <div className="bg-[#F4F1EC] rounded-t-[2rem] flex flex-col shadow-2xl relative z-10 animate-slideUp overflow-hidden">
-                            <div className="w-full flex justify-center pt-4 pb-2 bg-white rounded-t-[2rem]">
-                                <div className="w-12 h-1.5 bg-gray-200 rounded-full"></div>
+                        <div className="bg-white rounded-t-3xl w-full max-w-[390px] max-h-[85vh] flex flex-col shadow-2xl relative z-10 animate-slideUp">
+                            {/* Drag handle */}
+                            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+                                <div className="w-10 h-1 bg-gray-200 rounded-full"></div>
                             </div>
-                            <div className="px-6 py-4 bg-white border-b border-gray-100 flex items-center justify-between">
-                                <h3 className="font-black text-xl text-gray-900">Modifier le RDV</h3>
+                            {/* Header - fixed */}
+                            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 flex-shrink-0">
+                                <h3 className="font-black text-lg text-gray-900">Modifier le RDV</h3>
                                 <button onClick={() => setShowEditModal(false)} className="p-2 bg-gray-100 rounded-full"><XIcon /></button>
                             </div>
-                            <div className="p-6 flex flex-col gap-5">
+
+                            {/* Scrollable content */}
+                            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
                                 {/* Client info (read-only) */}
-                                <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-1">Client</p>
-                                    <p className="font-bold text-gray-900">{editAppt.client_name}</p>
+                                <div className="bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Client</p>
+                                    <p className="font-bold text-gray-900 text-sm">{editAppt.client_name}</p>
                                 </div>
 
-                                {/* Service selector */}
+                                {/* Service selector - compact */}
                                 <div>
-                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-2">Service</p>
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Service</p>
                                     <div className="grid grid-cols-2 gap-2">
                                         {services.map(s => (
                                             <div
                                                 key={s.id}
                                                 onClick={() => setEditService(s)}
-                                                className={`bg-white p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                                                className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
                                                     editService?.id === s.id
-                                                        ? 'border-[#C8372D] shadow-md shadow-[#C8372D]/10'
-                                                        : 'border-transparent shadow-sm hover:border-gray-200'
+                                                        ? 'border-[#C8372D] bg-[#C8372D]/5'
+                                                        : 'border-gray-100 bg-gray-50 hover:border-gray-200'
                                                 }`}
                                             >
                                                 <p className="font-bold text-sm text-gray-900 leading-tight">{s.name}</p>
-                                                <p className="text-[10px] text-gray-500 font-bold mt-1">{s.duration_minutes} min • {s.price} DT</p>
+                                                <p className="text-xs text-gray-500 mt-0.5">{s.duration_minutes}min • {s.price}DT</p>
                                             </div>
                                         ))}
                                     </div>
@@ -1335,52 +1339,55 @@ export default function Dashboard() {
 
                                 {/* Date */}
                                 <div>
-                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-2">Date</p>
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Date</p>
                                     <input
                                         type="date"
-                                        className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-[#C8372D] font-bold"
+                                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-[#C8372D] font-bold text-sm"
                                         value={editDate}
                                         onChange={(e) => handleEditDateChange(e.target.value)}
                                     />
                                 </div>
 
-                                {/* Time slots */}
+                                {/* Time slots - compact 3-col */}
                                 <div>
-                                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-2">Créneau</p>
+                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Créneau</p>
                                     {loadingEditSlots ? (
                                         <div className="flex justify-center py-4">
                                             <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-[#C8372D]"></div>
                                         </div>
                                     ) : editSlots.length === 0 ? (
-                                        <div className="text-center py-3 bg-white rounded-xl text-gray-400 text-sm font-medium">Aucun créneau disponible.</div>
+                                        <div className="text-center py-3 bg-gray-50 rounded-xl text-gray-400 text-sm font-medium">Aucun créneau disponible.</div>
                                     ) : (
-                                        <div className="grid grid-cols-3 gap-2 max-h-[160px] overflow-y-auto pr-1">
+                                        <div className="grid grid-cols-3 gap-2">
                                             {editSlots.map((slot, idx) => (
                                                 <button
                                                     key={idx}
                                                     type="button"
                                                     disabled={slot.isTaken}
                                                     onClick={() => setEditTime(slot.time)}
-                                                    className={`py-2 px-1 rounded-lg text-sm font-bold flex flex-col items-center transition-all ${
+                                                    className={`py-2 px-1 rounded-lg text-sm font-bold border flex flex-col items-center transition-all ${
                                                         slot.isTaken
-                                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-60'
+                                                            ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed'
                                                             : editTime === slot.time
-                                                                ? 'bg-[#C8372D] text-white shadow-md scale-[1.02]'
-                                                                : 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200 active:scale-95'
+                                                                ? 'bg-[#C8372D] text-white border-[#C8372D] shadow-md'
+                                                                : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100 active:scale-95'
                                                     }`}
                                                 >
                                                     <span>{slot.time}</span>
-                                                    <span className="text-[9px] uppercase mt-0.5 opacity-80">{slot.isTaken ? 'Réservé' : 'Libre'}</span>
+                                                    <span className="text-[9px] uppercase mt-0.5 opacity-70">{slot.isTaken ? 'Réservé' : 'Libre'}</span>
                                                 </button>
                                             ))}
                                         </div>
                                     )}
                                 </div>
+                            </div>
 
+                            {/* Save button - always visible */}
+                            <div className="p-5 border-t border-gray-100 flex-shrink-0">
                                 <button
                                     onClick={handleSaveEdit}
                                     disabled={savingEdit || !editDate || !editTime || !editService}
-                                    className="w-full bg-[#C8372D] text-white font-bold py-4 rounded-xl shadow-lg shadow-[#C8372D]/25 disabled:opacity-60 active:scale-95 transition-all"
+                                    className="w-full bg-[#C8372D] text-white font-bold py-4 rounded-2xl shadow-lg shadow-[#C8372D]/25 disabled:opacity-60 active:scale-95 transition-all"
                                 >
                                     {savingEdit ? 'Sauvegarde...' : '✓ Enregistrer les modifications'}
                                 </button>
@@ -1388,6 +1395,7 @@ export default function Dashboard() {
                         </div>
                     </div>
                 )}
+
 
                 {/* Toast */}
                 {toast && (
