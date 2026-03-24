@@ -1057,7 +1057,9 @@ export default function Dashboard() {
                                 </button>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto p-6">
+                            <div className="flex-1 overflow-y-auto p-6 modal-scroll"
+                                style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', overflowX: 'hidden' }}
+                            >
                                 {/* STEP 1: Client */}
                                 {rdvStep === 1 && (
                                     <div className="flex flex-col gap-4 animate-fadeIn h-full">
@@ -1309,7 +1311,9 @@ export default function Dashboard() {
                             </div>
 
                             {/* Scrollable content */}
-                            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+                            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 modal-scroll"
+                                style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y', overflowX: 'hidden' }}
+                            >
                                 {/* Client info (read-only) */}
                                 <div className="bg-gray-50 rounded-xl px-4 py-3 border border-gray-100">
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Client</p>
