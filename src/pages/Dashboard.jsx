@@ -51,6 +51,15 @@ const TrashIcon = () => (
     </svg>
 );
 
+const calculateDaysRemaining = (trialEndsAt) => {
+  if (!trialEndsAt) return 0
+  const end = new Date(trialEndsAt)
+  const now = new Date()
+  const diffMs = end.getTime() - now.getTime()
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+  return diffDays > 0 ? diffDays : 0
+}
+
 export default function Dashboard() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -91,8 +100,7 @@ export default function Dashboard() {
     const dayName = today.toLocaleDateString('fr-FR', { weekday: 'long' });
     const fullDate = today.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
     
-    const trialEndsAt = pro?.trial_ends_at ? new Date(pro.trial_ends_at) : new Date();
-    const daysRemaining = pro?.trial_ends_at ? Math.ceil((trialEndsAt - today) / (1000 * 60 * 60 * 24)) : 0;
+    const daysRemaining = calculateDaysRemaining(pro?.trial_ends_at);
 
     const nowMinutes = today.getHours() * 60 + today.getMinutes();
     const targetDateObj = new Date();
@@ -603,13 +611,31 @@ export default function Dashboard() {
                 </div>
 
                 {/* Block 2: Trial period */}
-                <div className="bg-white rounded-2xl p-4 border-2 border-orange-200 flex justify-between items-center shadow-sm">
+                <div className={`bg-white rounded-2xl p-4 border-2 flex justify-between items-center shadow-sm transition-colors duration-300 ${
+                    daysRemaining >= 10 ? 'border-green-200' : 
+                    daysRemaining >= 3 ? 'border-orange-200' : 
+                    'border-red-200'
+                }`}>
                     <div>
-                        <p className="text-orange-500 text-xs font-black uppercase tracking-wider mb-0.5">Période d'essai gratuit</p>
-                        <p className="text-gray-900 font-bold text-lg mb-1">{daysRemaining} jours restants</p>
+                        <p className={`text-xs font-black uppercase tracking-wider mb-0.5 ${
+                            daysRemaining >= 10 ? 'text-green-500' : 
+                            daysRemaining >= 3 ? 'text-orange-500' : 
+                            'text-red-500'
+                        }`}>
+                            Période d'essai gratuit
+                        </p>
+                        <p className="text-gray-900 font-bold text-lg mb-1">
+                            {daysRemaining >= 10 ? `${daysRemaining} jours restants` : 
+                             daysRemaining >= 3 ? `Plus que ${daysRemaining} jours !` : 
+                             `Derniers jours !`}
+                        </p>
                         <p className="text-gray-500 text-xs font-medium">Après: 10 DT/mois</p>
                     </div>
-                    <button className="bg-orange-100 text-orange-600 px-4 py-2.5 rounded-xl text-sm font-bold active:scale-95 transition-transform">
+                    <button className={`px-4 py-2.5 rounded-xl text-sm font-bold active:scale-95 transition-all ${
+                        daysRemaining >= 10 ? 'bg-green-100 text-green-600' : 
+                        daysRemaining >= 3 ? 'bg-orange-100 text-orange-600' : 
+                        'bg-red-100 text-red-600'
+                    }`}>
                         S'abonner
                     </button>
                 </div>
