@@ -87,6 +87,8 @@ export default function Dashboard() {
     const [animatingId, setAnimatingId] = useState(null);
     const notifiedRef = useRef(new Set());
     const [showTermines, setShowTermines] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
+    const [allAppointments, setAllAppointments] = useState([]);
     
     // New RDV Modal states
     const [showNewRdvModal, setShowNewRdvModal] = useState(false);
@@ -327,6 +329,16 @@ export default function Dashboard() {
                 .order('appointment_time', { ascending: true });
             
             setAppointments(apptsData || []);
+
+            // Fix for Historique du jour — fetch ALL appointments (no status filter)
+            const { data: allApptsData } = await supabase
+                .from('appointments')
+                .select('*, services(name, price, duration_minutes)')
+                .eq('pro_id', proDataToUse.id)
+                .eq('appointment_date', targetFormattedStr)
+                .order('appointment_time', { ascending: true });
+            
+            setAllAppointments(allApptsData || []);
 
             // Fetch Clients
             const { data: clientsData } = await supabase.from('clients').select('*').eq('pro_id', proDataToUse.id);
@@ -989,6 +1001,47 @@ export default function Dashboard() {
                                     </>
                                 );
                             })()
+                        )}
+                    </div>
+
+                    {/* Historique du jour */}
+                    <div className="mt-4">
+                        {/* Toggle button */}
+                        <button 
+                            onClick={() => setShowHistory(!showHistory)}
+                            className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-200"
+                        >
+                            <span className="font-bold text-gray-600 text-sm">
+                                📋 Historique du jour ({allAppointments.length} RDV)
+                            </span>
+                            <span>{showHistory ? '▲' : '▼'}</span>
+                        </button>
+
+                        {/* History list */}
+                        {showHistory && (
+                            <div className="mt-2 space-y-2">
+                                {allAppointments.map(a => (
+                                    <div key={a.id} className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100">
+                                        <span className="text-sm font-bold text-gray-500 min-w-[40px]">{a.appointment_time}</span>
+                                        <span className="flex-1 text-sm font-bold">{a.client_name}</span>
+                                        <span className="text-xs">{a.services?.name}</span>
+                                        <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
+                                            a.status === 'confirmed' ? 'bg-green-100 text-green-600' :
+                                            a.status === 'absent' ? 'bg-gray-100 text-gray-500' :
+                                            a.status === 'cancelled' ? 'bg-red-100 text-red-500' :
+                                            a.status === 'pending' ? 'bg-orange-100 text-orange-500' :
+                                            'bg-gray-100 text-gray-400'
+                                        }`}>
+                                            {a.status === 'confirmed' ? '✓ Confirmé' :
+                                             a.status === 'absent' ? '😔 Absent' :
+                                             a.status === 'cancelled' ? '✕ Annulé' :
+                                             a.status === 'pending' ? '⏳ Attente' :
+                                             '✓ Terminé'}
+                                        </span>
+                                        <span className="text-xs font-bold text-green-600">{a.services?.price} DT</span>
+                                    </div>
+                                ))}
+                            </div>
                         )}
                     </div>
                 </div>
