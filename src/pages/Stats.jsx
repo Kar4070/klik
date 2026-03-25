@@ -45,120 +45,116 @@ export default function StatsPage() {
 
     const fetchStats = async () => {
         try {
+            setLoading(true);
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) {
                 navigate('/');
                 return;
             }
 
-            // Fix 1 — Faster navigation between pages
-            let proDataToUse = null;
-            const cachedPro = sessionStorage.getItem('klik_pro');
-            if (cachedPro) {
-                proDataToUse = JSON.parse(cachedPro);
-            } else {
-                const { data: proData } = await supabase.from('pros').select('*').eq('id', user.id).single();
-                if (proData) {
-                    sessionStorage.setItem('klik_pro', JSON.stringify(proData));
-                    proDataToUse = proData;
-                }
-            }
-
-            if (!proDataToUse) return;
-
             const now = new Date();
             const currentMonth = now.getMonth();
             const currentYear = now.getFullYear();
-            const todayStr = now.toISOString().split('T')[0];
 
-            const startOfMonth = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
-            const endOfMonth = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
+            // Fetch ALL appointments this month
+            const startOfMonth = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0]
+            const endOfMonth = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0]
 
-            // Fix 4 — Fetch ALL appointments for stats (not just today)
-            const { data: appts } = await supabase
+            const { data: monthAppointmentsData } = await supabase
                 .from('appointments')
                 .select('*, services(name, price, duration_minutes)')
-                .eq('pro_id', proDataToUse.id)
+                .eq('pro_id', user.id)
                 .gte('appointment_date', startOfMonth)
-                .lte('appointment_date', endOfMonth);
+                .lte('appointment_date', endOfMonth)
 
-            const thisMonthAppts = appts || [];
+            const monthAppointments = monthAppointmentsData || []
+            const today = new Date().toISOString().split('T')[0]
 
-            let todayRevenue = 0;
-            let monthRevenue = 0;
-            let absentCountToday = 0;
-            let lostRevenueToday = 0;
-            let respectCountMonth = 0;
-            let absentCountMonth = 0;
-            let cancelledSumMonth = 0;
-            const uniqueClients = new Set();
-            const serviceCounts = {};
+            // Today's confirmed revenue
+            const confirmedToday = monthAppointments.filter(a => 
+                a.appointment_date === today && a.status === 'confirmed'
+            )
+            const revenueToday = confirmedToday.reduce((sum, a) => sum + (a.services?.price || 0), 0)
 
-            thisMonthAppts.forEach(a => {
-                const isToday = a.appointment_date === todayStr;
-                const price = Number(a.services?.price || 0);
+            // This month's confirmed revenue
+            const confirmedMonth = monthAppointments.filter(a => a.status === 'confirmed')
+            const revenueMonth = confirmedMonth.reduce((sum, a) => sum + (a.services?.price || 0), 0)
 
-                if (a.client_id) uniqueClients.add(a.client_id);
+            // Manque à gagner today (absent + cancelled today)
+            const lostToday = monthAppointments.filter(a => 
+                a.appointment_date === today && 
+                (a.status === 'absent' || a.status === 'cancelled')
+            )
+            const manqueToday = lostToday.reduce((sum, a) => sum + (a.services?.price || 0), 0)
 
-                // Fix 5 — Real revenue: only status = 'confirmed'
-                if (a.status === 'confirmed') {
-                    monthRevenue += price;
-                    respectCountMonth++;
-                    if (isToday) todayRevenue += price;
-                } else if (a.status === 'absent') {
-                    absentCountMonth++;
-                }
+            // Total this month (all except cancelled/absent)
+            const totalMonth = monthAppointments.filter(a => 
+                a.status !== 'cancelled' && a.status !== 'absent'
+            ).length
 
-                // Fix 1 — Manque à gagner (today)
-                if (isToday && (a.status === 'absent' || a.status === 'cancelled')) {
-                    absentCountToday++;
-                    lostRevenueToday += price;
-                }
+            // Absent this month
+            const absentMonth = monthAppointments.filter(a => 
+                a.status === 'absent' || a.status === 'cancelled'
+            ).length
 
-                // Fix 2 — Annulés ce mois (absent or cancelled)
-                if (a.status === 'cancelled' || a.status === 'absent') {
-                    cancelledSumMonth++;
-                }
+            // Success rate
+            const successRate = totalMonth > 0 
+                ? Math.round((confirmedMonth.length / totalMonth) * 100) 
+                : 0
 
-                if (a.services?.name) {
-                    serviceCounts[a.services.name] = (serviceCounts[a.services.name] || 0) + 1;
-                }
-            });
+            // Unique clients this month
+            const uniqueClients = [...new Set(
+                monthAppointments
+                    .filter(a => a.status === 'confirmed')
+                    .map(a => a.client_phone)
+            )].length
 
-            // Fix 3 — Stats hero counts
-            const totalApptsMonth = thisMonthAppts.filter(a => a.status !== 'cancelled').length;
-            const successRateMonth = (respectCountMonth + absentCountMonth) > 0 
-                ? Math.round((respectCountMonth / (respectCountMonth + absentCountMonth)) * 100) 
-                : 0;
-            const avgPerRdv = respectCountMonth > 0 ? Math.round(monthRevenue / respectCountMonth) : 0;
+            // Average per appointment
+            const avgPerRdv = confirmedMonth.length > 0 
+                ? Math.round(revenueMonth / confirmedMonth.length) 
+                : 0
 
-            const serviceStats = Object.keys(serviceCounts).map(name => ({
-                name,
-                count: serviceCounts[name],
-                percentage: totalApptsMonth > 0 ? Math.round((serviceCounts[name] / totalApptsMonth) * 100) : 0
-            })).sort((a,b) => b.count - a.count).slice(0, 5); // top 5 demandés
+            // Regular clients (more than 2 visits)
+            const clientVisits = {}
+            monthAppointments
+                .filter(a => a.status === 'confirmed')
+                .forEach(a => {
+                    if (a.client_phone) {
+                        clientVisits[a.client_phone] = (clientVisits[a.client_phone] || 0) + 1
+                    }
+                })
+            const regularClients = Object.values(clientVisits).filter(v => v > 2).length
 
-            // Regular clients fetching (visited more than 2 times total)
-            const { count: regularClientsCount } = await supabase
-                .from('clients')
-                .select('*', { count: 'exact', head: true })
-                .eq('pro_id', proDataToUse.id)
-                .gt('visit_count', 2);
+            // Top services
+            const serviceCount = {}
+            monthAppointments
+                .filter(a => a.status === 'confirmed')
+                .forEach(a => {
+                    const name = a.services?.name || 'Inconnu'
+                    serviceCount[name] = (serviceCount[name] || 0) + 1
+                })
+            const topServices = Object.entries(serviceCount)
+                .sort((a, b) => b[1] - a[1])
+                .map(([name, count]) => ({
+                    name,
+                    count,
+                    percentage: confirmedMonth.length > 0 ? Math.round((count / confirmedMonth.length) * 100) : 0
+                })).slice(0, 5)
 
             setStats({
-                todayRevenue,
-                monthRevenue,
-                absentCountToday,
-                lostRevenueToday,
-                totalApptsMonth,
-                respectCountMonth,
-                successRateMonth,
-                absentCountMonth,
-                uniqueClientsMonth: uniqueClients.size,
-                cancelledSumMonth,
-                regularClients: regularClientsCount || 0,
-                avgPerRdv,
-                serviceStats
+                todayRevenue: revenueToday,
+                monthRevenue: revenueMonth,
+                absentCountToday: lostToday.length,
+                lostRevenueToday: manqueToday,
+                totalApptsMonth: totalMonth,
+                respectCountMonth: confirmedMonth.length,
+                successRateMonth: successRate,
+                absentCountMonth: absentMonth,
+                uniqueClientsMonth: uniqueClients,
+                cancelledSumMonth: monthAppointments.filter(a => a.status === 'cancelled').length, // Explicit for UI
+                regularClients: regularClients,
+                avgPerRdv: avgPerRdv,
+                serviceStats: topServices
             });
 
         } catch (err) {
