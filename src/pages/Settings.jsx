@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { calculateDaysRemaining } from '../utils/trialUtils';
 
 // Simple Icons
 const HomeIcon = () => (
@@ -24,6 +25,7 @@ export default function Settings() {
     const navigate = useNavigate();
     const location = useLocation();
     const [pro, setPro] = useState(null);
+    const daysRemaining = calculateDaysRemaining(pro?.trial_ends_at);
     const [servicesCount, setServicesCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [scheduleSummary, setScheduleSummary] = useState('Chargement...');
@@ -104,7 +106,7 @@ export default function Settings() {
                             <p className="text-gray-500 font-bold text-sm mb-2">{pro?.phone}</p>
                             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-black uppercase tracking-wider border border-orange-100">
                                 <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></span>
-                                24 jours restants
+                                {daysRemaining} jours restants
                             </div>
                         </div>
                     </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { calculateDaysRemaining } from '../utils/trialUtils';
 
 // Simple Icons
 const BellIcon = () => (
@@ -56,14 +57,6 @@ const EditIcon = () => (
     </svg>
 );
 
-const calculateDaysRemaining = (trialEndsAt) => {
-  if (!trialEndsAt) return 0
-  const end = new Date(trialEndsAt)
-  const now = new Date()
-  const diffMs = end.getTime() - now.getTime()
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  return diffDays > 0 ? diffDays : 0
-}
 
 const getTodayDate = () => {
   const today = new Date()
