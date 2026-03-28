@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { calculateDaysRemaining } from '../utils/trialUtils';
+import { getCachedData, setCachedData } from '../utils/cacheUtils';
 
 // Simple Icons
 const BellIcon = () => (
@@ -210,7 +211,29 @@ export default function Dashboard() {
     }, []);
 
     useEffect(() => {
-        fetchDashboardData();
+        const init = async () => {
+            // Show cached data immediately
+            const cachedPro = getCachedData('klik_pro');
+            if (cachedPro) setPro(cachedPro);
+            
+            const cachedServices = getCachedData('klik_services');
+            if (cachedServices) setServices(cachedServices);
+            
+            // If we have cached data, we can start showing the UI immediately
+            if (cachedPro && cachedServices) {
+                setLoading(false);
+            }
+
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                navigate('/');
+                return;
+            }
+
+            // Fresh background fetch
+            await fetchDashboardData(user.id);
+        };
+        init();
     }, [selectedTab]);
 
     // Realtime subscription for new appointments (Bug 3 Fix)
@@ -283,48 +306,56 @@ export default function Dashboard() {
         return () => clearInterval(interval);
     }, [activeAppointments]);
 
-    const fetchDashboardData = async () => {
+    const fetchDashboardData = async (userId) => {
         try {
-            setLoading(true);
-            const { data: { user } } = await supabase.auth.getUser();
-            
-            if (!user) {
-                navigate('/');
-                return;
+            // Check cache for pro and services to see if we should show loading
+            const cachedPro = getCachedData('klik_pro');
+            const cachedServices = getCachedData('klik_services');
+            if (!cachedPro || !cachedServices) {
+                setLoading(true);
             }
 
-            // Fix 1 — Faster navigation between pages
-            let proDataToUse = null;
-            const cachedPro = sessionStorage.getItem('klik_pro');
-            if (cachedPro) {
-                proDataToUse = JSON.parse(cachedPro);
-                setPro(proDataToUse);
-            } else {
-                const { data: proData } = await supabase.from('pros').select('*').eq('id', user.id).single();
+            // Fetch Pro
+            let proDataToUse = cachedPro;
+            if (!proDataToUse) {
+                const { data: proData } = await supabase.from('pros').select('*').eq('id', userId).single();
                 if (proData) {
                     setPro(proData);
-                    sessionStorage.setItem('klik_pro', JSON.stringify(proData));
+                    setCachedData('klik_pro', proData);
                     proDataToUse = proData;
                 }
+            } else {
+                // Silently refresh pro in background
+                supabase.from('pros').select('*').eq('id', userId).single().then(({ data }) => {
+                    if (data) {
+                        setPro(data);
+                        setCachedData('klik_pro', data);
+                    }
+                });
             }
 
             if (!proDataToUse) return;
 
-            // Bug 1 Fix: Ensure services fetch uses correct pro_id from auth user
-            const cachedServices = sessionStorage.getItem('klik_services');
-            if (cachedServices) {
-                setServices(JSON.parse(cachedServices));
-            } else {
+            // Fetch Services
+            if (!cachedServices) {
                 const { data: servicesData } = await supabase
                     .from('services')
                     .select('*')
-                    .eq('pro_id', user.id); // Using user.id directly
+                    .eq('pro_id', proDataToUse.id);
                 const sData = servicesData || [];
                 setServices(sData);
-                sessionStorage.setItem('klik_services', JSON.stringify(sData));
+                setCachedData('klik_services', sData);
+            } else {
+                // Silently refresh services in background
+                supabase.from('services').select('*').eq('pro_id', proDataToUse.id).then(({ data }) => {
+                    if (data) {
+                        setServices(data || []);
+                        setCachedData('klik_services', data || []);
+                    }
+                });
             }
 
-            // Fix 2 — Show tomorrow's appointments
+            // Appointments (already fetched fresh based on current date)
             const targetDateObj = new Date();
             if (selectedTab === 'Demain') {
                 targetDateObj.setDate(targetDateObj.getDate() + 1);
@@ -694,9 +725,19 @@ export default function Dashboard() {
     };
 
     if (loading) {
-        return <div className="min-h-screen bg-[#F4F1EC] flex items-center justify-center">
-            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-[#C8372D]"></div>
-        </div>;
+        return (
+            <div className="min-h-screen bg-[#F4F1EC] p-4 flex flex-col gap-5 pt-8 max-w-[390px] mx-auto">
+                <div className="animate-pulse space-y-4">
+                    <div className="h-10 w-2/3 bg-gray-200 rounded-xl mb-6"></div>
+                    <div className="h-24 bg-gray-200 rounded-[1.5rem]"></div>
+                    <div className="h-12 bg-gray-200 rounded-[1rem]"></div>
+                    <div className="h-24 bg-gray-100 rounded-2xl"></div>
+                    <div className="h-32 bg-gray-200 rounded-[1.5rem]"></div>
+                    <div className="h-16 bg-gray-100 rounded-2xl"></div>
+                    <div className="h-16 bg-gray-100 rounded-2xl"></div>
+                </div>
+            </div>
+        );
     }
 
     return (

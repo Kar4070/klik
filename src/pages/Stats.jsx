@@ -169,8 +169,22 @@ export default function StatsPage() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-[#F4F1EC] flex items-center justify-center">
-                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-[#C8372D]"></div>
+            <div className="min-h-screen bg-[#F4F1EC] p-4 flex flex-col gap-5 pt-8 max-w-[390px] mx-auto">
+                <div className="animate-pulse space-y-4">
+                    <div className="h-10 w-2/3 bg-gray-200 rounded-xl mb-6"></div>
+                    <div className="flex gap-4">
+                        <div className="flex-1 h-24 bg-gray-200 rounded-[1.5rem]"></div>
+                        <div className="flex-1 h-24 bg-gray-200 rounded-[1.5rem]"></div>
+                    </div>
+                    <div className="h-32 bg-gray-200 rounded-[1.5rem]"></div>
+                    <div className="h-44 bg-gray-200 rounded-[1.5rem]"></div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="h-24 bg-gray-100 rounded-2xl"></div>
+                        <div className="h-24 bg-gray-100 rounded-2xl"></div>
+                        <div className="h-24 bg-gray-100 rounded-2xl"></div>
+                        <div className="h-24 bg-gray-100 rounded-2xl"></div>
+                    </div>
+                </div>
             </div>
         );
     }

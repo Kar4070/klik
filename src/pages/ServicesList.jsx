@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import { getCachedData, setCachedData, clearCache } from '../utils/cacheUtils';
 
 const ArrowLeftIcon = () => (
     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -28,7 +29,14 @@ export default function ServicesList() {
 
     const fetchServices = async () => {
         try {
-            setLoading(true);
+            const cached = getCachedData('klik_services');
+            if (cached) {
+                setServices(cached);
+                setLoading(false);
+            } else {
+                setLoading(true);
+            }
+
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) {
                 navigate('/login');
@@ -41,8 +49,9 @@ export default function ServicesList() {
                 .select('*')
                 .eq('pro_id', user.id);
             
-            setServices(servicesData || []);
-            sessionStorage.setItem('klik_services', JSON.stringify(servicesData || []));
+            const sData = servicesData || [];
+            setServices(sData);
+            setCachedData('klik_services', sData);
         } catch (error) {
             console.error("Error fetching services:", error);
         } finally {
@@ -64,7 +73,7 @@ export default function ServicesList() {
             setServices([...services, data[0]]);
             setShowAddServiceModal(false);
             setNewService({ name: '', price: '', duration_minutes: '' });
-            sessionStorage.removeItem('klik_services');
+            clearCache('klik_services');
         }
     };
 
@@ -73,7 +82,7 @@ export default function ServicesList() {
         if (!error) {
             const updated = services.filter(s => s.id !== id);
             setServices(updated);
-            sessionStorage.setItem('klik_services', JSON.stringify(updated));
+            clearCache('klik_services');
         }
     };
 

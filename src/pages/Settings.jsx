@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { calculateDaysRemaining } from '../utils/trialUtils';
+import { getCachedData, setCachedData } from '../utils/cacheUtils';
 
 // Simple Icons
 const HomeIcon = () => (
@@ -31,34 +32,58 @@ export default function Settings() {
     const [scheduleSummary, setScheduleSummary] = useState('Chargement...');
 
     useEffect(() => {
-        fetchData();
-    }, []);
-
-    const fetchData = async () => {
-        try {
-            setLoading(true);
+        const init = async () => {
+            const cachedPro = getCachedData('klik_pro');
+            if (cachedPro) {
+                setPro(cachedPro);
+                setLoading(false);
+            }
+            
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) {
                 navigate('/login');
                 return;
             }
+            
+            fetchData(user.id);
+        };
+        init();
+    }, []);
+
+    const fetchData = async (userId) => {
+        try {
+            const cachedPro = getCachedData('klik_pro');
+            if (!cachedPro) setLoading(true);
 
             // Fetch Pro
-            const { data: proData } = await supabase.from('pros').select('*').eq('id', user.id).single();
-            if (proData) setPro(proData);
+            if (!cachedPro) {
+                const { data: proData } = await supabase.from('pros').select('*').eq('id', userId).single();
+                if (proData) {
+                    setPro(proData);
+                    setCachedData('klik_pro', proData);
+                }
+            } else {
+                // Silently refresh pro in background
+                supabase.from('pros').select('*').eq('id', userId).single().then(({ data }) => {
+                    if (data) {
+                        setPro(data);
+                        setCachedData('klik_pro', data);
+                    }
+                });
+            }
 
             // Fetch Services Count
             const { count } = await supabase
                 .from('services')
                 .select('*', { count: 'exact', head: true })
-                .eq('pro_id', user.id);
+                .eq('pro_id', userId);
             setServicesCount(count || 0);
 
             // Fetch Schedules for summary
             const { data: schedData } = await supabase
                 .from('schedules')
                 .select('*')
-                .eq('pro_id', user.id)
+                .eq('pro_id', userId)
                 .order('day_of_week', { ascending: true });
 
             if (schedData && schedData.length > 0) {
@@ -82,8 +107,16 @@ export default function Settings() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-[#F4F1EC] flex items-center justify-center">
-                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-[#C8372D]"></div>
+            <div className="min-h-screen bg-[#F4F1EC] p-4 flex flex-col pt-12 max-w-[390px] mx-auto">
+                <div className="animate-pulse space-y-4 px-2">
+                    <div className="h-10 w-2/3 bg-gray-200 rounded-xl mb-10"></div>
+                    <div className="h-32 bg-gray-200 rounded-[2rem] mb-8"></div>
+                    <div className="space-y-4">
+                        <div className="h-20 bg-gray-100 rounded-[1.5rem]"></div>
+                        <div className="h-20 bg-gray-100 rounded-[1.5rem]"></div>
+                        <div className="h-20 bg-gray-100 rounded-[1.5rem]"></div>
+                    </div>
+                </div>
             </div>
         );
     }
