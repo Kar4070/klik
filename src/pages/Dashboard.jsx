@@ -76,7 +76,9 @@ export default function Dashboard() {
     const [selectedTab, setSelectedTab] = useState('Aujourd\'hui');
     
     const [loading, setLoading] = useState(true);
-    const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+    const [showNotifications, setShowNotifications] = useState(false);
+    const [notifications, setNotifications] = useState([]);
+    const [unreadCount, setUnreadCount] = useState(0);
     const [animatingId, setAnimatingId] = useState(null);
     const notifiedRef = useRef(new Set());
     const [showTermines, setShowTermines] = useState(false);
@@ -108,6 +110,26 @@ export default function Dashboard() {
     const showToast = (msg) => {
         setToast(msg);
         setTimeout(() => setToast(null), 3000);
+    };
+
+    // Notification helper
+    const addNotification = (message, type = 'info') => {
+        const notif = {
+            id: Date.now(),
+            message,
+            type,
+            time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+            read: false
+        };
+        setNotifications(prev => [notif, ...prev].slice(0, 20)); // Keep last 20
+        setUnreadCount(prev => prev + 1);
+    };
+
+    // Handle bell click
+    const handleBellClick = () => {
+        setShowNotifications(!showNotifications);
+        setUnreadCount(0);
+        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     };
 
     // Edit modal states
@@ -206,19 +228,20 @@ export default function Dashboard() {
                     filter: `pro_id=eq.${pro.id}`
                 },
                 (payload) => {
-                    // Refresh all dashboard data (Fix for Bug 3)
+                    // Update lists
                     fetchDashboardData();
 
-                    // Force notification
-                    if ('Notification' in window) {
-                        Notification.requestPermission().then(permission => {
-                            if (permission === 'granted') {
-                                new Notification('🔔 Nouveau RDV via KLIK !', {
-                                    body: `${payload.new.client_name} — ${payload.new.appointment_date} à ${payload.new.appointment_time}`,
-                                    icon: '/klik-icon.png',
-                                    badge: '/klik-icon.png'
-                                });
-                            }
+                    // Add to state notifications (Fix: Notification panel)
+                    addNotification(
+                        `📲 Nouveau RDV — ${payload.new.client_name} — ${payload.new.appointment_date} à ${payload.new.appointment_time}`,
+                        'new_booking'
+                    );
+
+                    // Force browser notification
+                    if ('Notification' in window && Notification.permission === 'granted') {
+                        new Notification('📲 Nouveau RDV !', {
+                            body: `${payload.new.client_name} — ${payload.new.appointment_date}`,
+                            icon: '/klik-icon.png'
                         });
                     }
                 }
@@ -231,40 +254,34 @@ export default function Dashboard() {
     }, [pro?.id]); // Removed services dependency as we refresh whole dashboard
 
     useEffect(() => {
-        if (visibleAppointments.length === 0) return;
-        
-        const checkNotifications = () => {
-            if (!('Notification' in window) || Notification.permission !== 'granted') return;
-            
+        const interval = setInterval(() => {
             const now = new Date();
-            const nowMinutes = now.getHours() * 60 + now.getMinutes();
+            const currentMins = now.getHours() * 60 + now.getMinutes();
+            
+            activeAppointments.forEach(apt => {
+                if (apt.status !== 'confirmed') return;
+                
+                const [h, m] = apt.appointment_time.split(':').map(Number);
+                const aptMins = h * 60 + m;
+                const diff = aptMins - currentMins;
+                
+                // Track to avoid multiple notifications in same minute
+                const id60 = `${apt.id}-60`;
+                const id30 = `${apt.id}-30`;
 
-            visibleAppointments.forEach(appt => {
-                if (appt.status !== 'confirmed') return;
-
-                const [h, m] = appt.appointment_time.split(':').map(Number);
-                const apptMinutes = h * 60 + m;
-                const diff = apptMinutes - nowMinutes;
-
-                const id60 = `${appt.id}-60`;
-                const id30 = `${appt.id}-30`;
-                const serviceName = appt.services?.name || 'Service';
-
-                if (diff >= 58 && diff <= 62 && !notifiedRef.current.has(id60)) {
-                    new Notification("⏰ RDV dans 1h", { body: `${appt.client_name} — ${serviceName}` });
+                if (diff === 60 && !notifiedRef.current.has(id60)) {
+                    addNotification(`⏰ RDV dans 1h — ${apt.client_name} — ${apt.services?.name}`, 'reminder');
                     notifiedRef.current.add(id60);
-                } else if (diff >= 28 && diff <= 32 && !notifiedRef.current.has(id30)) {
-                    new Notification("🔔 RDV dans 30min", { body: `${appt.client_name} — ${serviceName} — Partez maintenant !` });
+                }
+                if (diff === 30 && !notifiedRef.current.has(id30)) {
+                    addNotification(`🔔 RDV dans 30min — ${apt.client_name} — Préparez-vous !`, 'reminder');
                     notifiedRef.current.add(id30);
                 }
             });
-        };
-
-        const interval = setInterval(checkNotifications, 60000);
-        checkNotifications();
+        }, 60000);
         
         return () => clearInterval(interval);
-    }, [visibleAppointments]);
+    }, [activeAppointments]);
 
     const fetchDashboardData = async () => {
         try {
@@ -695,12 +712,15 @@ export default function Dashboard() {
                         <p className="text-sm text-gray-500 font-medium">Bienvenue 👋</p>
                     </div>
                     <button 
-                        onClick={() => setIsDrawerOpen(true)}
+                        onClick={handleBellClick}
                         className="relative p-2 bg-white rounded-full shadow-sm hover:shadow-md transition-shadow"
                     >
                         <BellIcon />
-                        {/* Notification Badge Example */}
-                        <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+                        {unreadCount > 0 && (
+                            <span className="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white text-[10px] font-black border-2 border-white rounded-full flex items-center justify-center">
+                                {unreadCount}
+                            </span>
+                        )}
                     </button>
                 </header>
 
@@ -1085,18 +1105,39 @@ export default function Dashboard() {
                 </div>
 
                 {/* Notifications Drawer */}
-                {isDrawerOpen && (
+                {showNotifications && (
                     <div className="fixed inset-0 z-[100] max-w-[390px] mx-auto">
-                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsDrawerOpen(false)}></div>
-                        <div className="absolute top-0 left-0 right-0 bg-white rounded-b-3xl p-6 shadow-2xl transform transition-transform animate-slideDown">
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="font-black text-xl">Notifications</h3>
-                                <button onClick={() => setIsDrawerOpen(false)} className="p-2 bg-gray-100 rounded-full">
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowNotifications(false)}></div>
+                        <div className="absolute top-0 left-0 right-0 bg-white rounded-b-3xl shadow-2xl transform transition-transform animate-slideDown flex flex-col max-h-[80vh]">
+                            <div className="flex justify-between items-center p-6 border-b border-gray-100 flex-shrink-0">
+                                <h3 className="font-black text-xl text-gray-900">Notifications</h3>
+                                <button onClick={() => setShowNotifications(false)} className="p-2 bg-gray-100/80 hover:bg-gray-200 rounded-full transition-colors">
                                     <XIcon />
                                 </button>
                             </div>
-                            <div className="text-center py-6 text-gray-500 text-sm font-medium">
-                                Aucune nouvelle notification
+                            
+                            <div className="overflow-y-auto modal-scroll pb-6">
+                                {notifications.length === 0 ? (
+                                    <div className="text-center py-12 text-gray-400">
+                                        <div className="text-4xl mb-3">🔔</div>
+                                        <p className="text-sm font-medium">Aucune notification</p>
+                                    </div>
+                                ) : (
+                                    notifications.map(notif => (
+                                        <div key={notif.id} className={`p-4 border-b border-gray-100 flex gap-4 items-start transition-colors ${!notif.read ? 'bg-orange-50/70' : 'bg-white hover:bg-gray-50'}`}>
+                                            <div className="text-2xl flex-shrink-0 mt-0.5">
+                                                {notif.type === 'new_booking' ? '📲' : '⏰'}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-bold text-gray-900 leading-snug">{notif.message}</p>
+                                                <p className="text-[10px] text-gray-400 font-black uppercase tracking-wider mt-1.5">{notif.time}</p>
+                                            </div>
+                                            {!notif.read && (
+                                                <div className="w-2.5 h-2.5 rounded-full bg-[#C8372D] mt-1.5 animate-pulse flex-shrink-0"></div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
                     </div>
