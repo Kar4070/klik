@@ -72,7 +72,7 @@ export default function Dashboard() {
     
     const [pro, setPro] = useState(null);
     const [services, setServices] = useState([]);
-    const [appointments, setAppointments] = useState([]);
+    const [activeAppointments, setActiveAppointments] = useState([]);
     const [selectedTab, setSelectedTab] = useState('Aujourd\'hui');
     
     const [loading, setLoading] = useState(true);
@@ -81,7 +81,7 @@ export default function Dashboard() {
     const notifiedRef = useRef(new Set());
     const [showTermines, setShowTermines] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
-    const [allAppointments, setAllAppointments] = useState([]);
+    const [historyAppointments, setHistoryAppointments] = useState([]);
     
     // New RDV Modal states
     const [showNewRdvModal, setShowNewRdvModal] = useState(false);
@@ -135,10 +135,10 @@ export default function Dashboard() {
     const targetFormatted = `${targetDateObj.getFullYear()}-${String(targetDateObj.getMonth() + 1).padStart(2, '0')}-${String(targetDateObj.getDate()).padStart(2, '0')}`;
     
     // Use targetFormatted for filtering current view
-    const visibleAppointments = React.useMemo(() => appointments.filter(a => a.appointment_date === targetFormatted), [appointments, targetFormatted]);
+    const visibleAppointments = React.useMemo(() => activeAppointments.filter(a => a.appointment_date === targetFormatted), [activeAppointments, targetFormatted]);
 
     // Find next appointment from currently fetched appointments
-    const upcomingAppts = appointments.filter(a => {
+    const upcomingAppts = activeAppointments.filter(a => {
         if (a.status === 'cancelled' || a.status === 'absent') return false;
         
         const apptDateObj = new Date(a.appointment_date);
@@ -321,17 +321,8 @@ export default function Dashboard() {
                 .eq('appointment_date', targetFormattedStr)
                 .order('appointment_time', { ascending: true });
             
-            setAppointments(apptsData || []);
-
-            // Fix for Historique du jour — fetch ALL appointments (no status filter)
-            const { data: allApptsData } = await supabase
-                .from('appointments')
-                .select('*, services(name, price, duration_minutes)')
-                .eq('pro_id', proDataToUse.id)
-                .eq('appointment_date', targetFormattedStr)
-                .order('appointment_time', { ascending: true });
-            
-            setAllAppointments(allApptsData || []);
+            setHistoryAppointments(apptsData || []);
+            setActiveAppointments((apptsData || []).filter(a => a.status === 'pending' || a.status === 'confirmed'));
 
             // Fetch Clients
             const { data: clientsData } = await supabase.from('clients').select('*').eq('pro_id', proDataToUse.id);
@@ -344,22 +335,35 @@ export default function Dashboard() {
     };
 
     const updateStatus = async (id, status) => {
-        setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+        setActiveAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+        setHistoryAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
         await supabase.from('appointments').update({ status }).eq('id', id);
     };
 
     const handleCancelAppt = async (id) => {
         setAnimatingId(id);
         setTimeout(async () => {
-            setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: 'absent' } : a));
-            await supabase.from('appointments').update({ status: 'absent' }).eq('id', id);
+            // Update in Supabase (Bug Fix: use status 'cancelled')
+            await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id);
+            
+            // Remove from active list
+            setActiveAppointments(prev => prev.filter(a => a.id !== id));
+            
+            // Update in history list
+            setHistoryAppointments(prev => prev.map(a => 
+                a.id === id ? { ...a, status: 'cancelled' } : a
+            ));
+            
             setAnimatingId(null);
         }, 300);
     };
 
     const handleDeleteAppt = async (id) => {
-        setAppointments(prev => prev.filter(a => a.id !== id));
-        await supabase.from('appointments').delete().eq('id', id);
+        // According to requirement: "Never fully delete from UI history"
+        // We only remove from active appointments list and update status to cancelled in DB/history
+        setActiveAppointments(prev => prev.filter(a => a.id !== id));
+        setHistoryAppointments(prev => prev.map(a => a.id === id ? { ...a, status: 'cancelled' } : a));
+        await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', id);
     };
 
     // New RDV Handlers
@@ -829,7 +833,7 @@ export default function Dashboard() {
                             </div>
                         ) : (
                             (() => {
-                                const activeAppointments = [];
+                                const displayedActive = [];
                                 const pastAppointments = [];
                                 
                                 const todayStr = new Date().toLocaleDateString('en-CA');
@@ -847,7 +851,7 @@ export default function Dashboard() {
                                     if (isTerminated) {
                                         pastAppointments.push(appt);
                                     } else {
-                                        activeAppointments.push(appt);
+                                        displayedActive.push(appt);
                                     }
                                 });
 
@@ -968,7 +972,7 @@ export default function Dashboard() {
 
                                 return (
                                     <>
-                                        {activeAppointments.map(appt => renderAppt(appt, false))}
+                                        {displayedActive.map(appt => renderAppt(appt, false))}
                                         {pastAppointments.length > 0 && (
                                             <div className="mt-4 pt-4 border-t border-gray-100">
                                                 <button 
@@ -986,7 +990,7 @@ export default function Dashboard() {
                                                 )}
                                             </div>
                                         )}
-                                        {activeAppointments.length === 0 && pastAppointments.length > 0 && !showTermines && (
+                                        {displayedActive.length === 0 && pastAppointments.length > 0 && !showTermines && (
                                             <div className="text-center py-4 text-gray-400 font-medium text-sm">
                                                 Plus de rendez-vous actifs aujourd'hui.
                                             </div>
@@ -1005,33 +1009,33 @@ export default function Dashboard() {
                             className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-200"
                         >
                             <span className="font-bold text-gray-600 text-sm">
-                                📋 Historique du jour ({allAppointments.length} RDV)
+                                📋 Historique du jour ({historyAppointments.length} RDV)
                             </span>
                             <span>{showHistory ? '▲' : '▼'}</span>
                         </button>
 
-                        {/* History list */}
+                        {/* History list - show ALL statuses with correct badges */}
                         {showHistory && (
                             <div className="mt-2 space-y-2">
-                                {allAppointments.map(a => (
+                                {historyAppointments.map(a => (
                                     <div key={a.id} className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100">
                                         <span className="text-sm font-bold text-gray-500 min-w-[40px]">{a.appointment_time}</span>
                                         <span className="flex-1 text-sm font-bold">{a.client_name}</span>
-                                        <span className="text-xs">{a.services?.name}</span>
-                                        <span className={`text-xs font-bold px-2 py-1 rounded-lg ${
+                                        <span className="text-xs text-gray-500 truncate max-w-[80px]">{a.services?.name}</span>
+                                        <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-lg ${
                                             a.status === 'confirmed' ? 'bg-green-100 text-green-600' :
+                                            a.status === 'pending' ? 'bg-orange-100 text-orange-500' :
                                             a.status === 'absent' ? 'bg-gray-100 text-gray-500' :
                                             a.status === 'cancelled' ? 'bg-red-100 text-red-500' :
-                                            a.status === 'pending' ? 'bg-orange-100 text-orange-500' :
                                             'bg-gray-100 text-gray-400'
                                         }`}>
                                             {a.status === 'confirmed' ? '✓ Confirmé' :
+                                             a.status === 'pending' ? '⏳ Attente' :
                                              a.status === 'absent' ? '😔 Absent' :
                                              a.status === 'cancelled' ? '✕ Annulé' :
-                                             a.status === 'pending' ? '⏳ Attente' :
                                              '✓ Terminé'}
                                         </span>
-                                        <span className="text-xs font-bold text-green-600">{a.services?.price} DT</span>
+                                        <span className="text-xs font-bold text-green-600 font-mono">{a.services?.price} DT</span>
                                     </div>
                                 ))}
                             </div>
