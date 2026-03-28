@@ -67,6 +67,23 @@ const getTodayDate = () => {
   return `${year}-${month}-${day}`
 }
 
+// Status badge
+const StatusBadge = ({ status }) => {
+  const config = {
+    confirmed: { bg: 'bg-green-100', text: 'text-green-600', label: '✓', full: 'Confirmé' },
+    pending: { bg: 'bg-orange-100', text: 'text-orange-500', label: '⏳', full: 'Attente' },
+    absent: { bg: 'bg-gray-100', text: 'text-gray-500', label: '😔', full: 'Absent' },
+    cancelled: { bg: 'bg-red-100', text: 'text-red-400', label: '✕', full: 'Annulé' },
+    completed: { bg: 'bg-gray-100', text: 'text-gray-500', label: '✓', full: 'Terminé' },
+  }
+  const c = config[status] || config.confirmed
+  return (
+    <span className={`${c.bg} ${c.text} text-[10px] sm:text-xs font-bold px-2 py-1 rounded-lg`}>
+      {c.label} {c.full}
+    </span>
+  )
+}
+
 export default function Dashboard() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -917,115 +934,99 @@ export default function Dashboard() {
                                 });
 
                                 const renderAppt = (appt, isPast = false) => {
-                                    // Status styling config
-                                    let sColor = "bg-gray-200";
-                                    let sText = "bg-gray-100 text-gray-600";
-                                    let sLabel = "Nouveau";
-                                    let nameStyle = "font-bold text-gray-900 text-sm";
-                                    let cardStyle = "relative flex bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm shadow-gray-200/50 group transition-all duration-300";
+                                    const effectiveStatus = isPast ? 'completed' : appt.status;
                                     
-                                    if (isPast) {
-                                        sColor = "bg-gray-300";
-                                        sText = "bg-gray-100 text-gray-500 border border-gray-200";
-                                        sLabel = "✓ Terminé";
-                                        nameStyle = "font-bold text-gray-900 text-sm";
-                                        cardStyle = "relative flex bg-gray-50 border border-gray-200 rounded-xl overflow-hidden group transition-all duration-300 opacity-60";
-                                    } else if (appt.status === 'confirmed') {
-                                        sColor = "bg-green-500";
-                                        sText = "bg-green-100 text-green-700";
-                                        sLabel = "Confirmé";
-                                    } else if (appt.status === 'pending') {
-                                        sColor = "bg-yellow-400";
-                                        sText = "bg-yellow-100 text-yellow-700";
-                                        sLabel = "En attente";
-                                    } else if (appt.status === 'cancelled') {
-                                        sColor = "bg-red-500";
-                                        sText = "bg-red-50 text-red-600";
-                                        sLabel = "Annulé";
-                                    } else if (appt.status === 'absent') {
-                                        sColor = "bg-gray-300";
-                                        sText = "bg-gray-100 text-gray-500 border border-gray-200";
-                                        sLabel = "Absent";
-                                        nameStyle = "font-bold text-gray-400 text-sm line-through";
-                                        cardStyle = "relative flex bg-gray-50 border border-gray-200 rounded-xl overflow-hidden group transition-all duration-300 opacity-80";
-                                    }
-
+                                    const cardStyle = `flex items-center gap-3 p-3 bg-white rounded-2xl border border-gray-100 shadow-sm transition-all duration-300 ${isPast ? 'opacity-60 bg-gray-50' : 'hover:border-gray-200 hover:shadow-md'}`;
+                                    
                                     return (
                                         <div key={appt.id} className={`${cardStyle} ${animatingId === appt.id ? 'opacity-0 scale-95 !h-0 !p-0 !border-0 mb-0 pointer-events-none' : ''}`}>
-                                            <div className={`w-1.5 ${sColor}`}></div>
-                                            <div className="flex-1 p-3 flex flex-col gap-2">
-                                                <div className="flex justify-between items-center">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-14 text-center border-r border-gray-100 pr-2">
-                                                            <p className="font-bold text-gray-900 leading-none">{appt.appointment_time}</p>
-                                                            <p className="text-[10px] text-gray-400 font-medium mt-1">{appt.services?.duration_minutes || 0} min</p>
-                                                        </div>
-                                                        <div>
-                                                            <p className={nameStyle}>{appt.client_name}</p>
-                                                            <p className="text-xs text-gray-500 font-medium truncate max-w-[120px]">
-                                                                {appt.services?.name || 'RDV Manuel'} • {appt.services?.price || '0'} DT
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    <span className={`text-[10px] uppercase font-black px-2 py-1 rounded-md ${sText}`}>
-                                                        {sLabel}
-                                                    </span>
+                                            {/* Left colored border by status */}
+                                            <div className={`w-1.5 self-stretch rounded-full ${
+                                                effectiveStatus === 'confirmed' ? 'bg-green-400' :
+                                                effectiveStatus === 'pending' ? 'bg-orange-400' :
+                                                effectiveStatus === 'completed' ? 'bg-gray-400' :
+                                                effectiveStatus === 'cancelled' ? 'bg-red-400' :
+                                                'bg-gray-300'
+                                            }`}></div>
+                                            
+                                            {/* Time */}
+                                            <div className="text-center min-w-[48px]">
+                                                <div className="font-bold text-sm text-gray-900">{appt.appointment_time}</div>
+                                                <div className="text-[10px] text-gray-400 font-medium">{appt.services?.duration_minutes || 0}min</div>
+                                            </div>
+                                            
+                                            {/* Info */}
+                                            <div className="flex-1 min-w-0">
+                                                <div className={`font-bold text-sm truncate ${appt.status === 'absent' ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                                                    {appt.client_name}
                                                 </div>
+                                                <div className="text-xs text-gray-500 truncate font-medium">
+                                                    {appt.services?.name || 'RDV Manuel'} · {appt.services?.price || '0'} DT
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Status + Actions */}
+                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                                <StatusBadge status={effectiveStatus} />
                                                 
-                                                <div className="flex items-center justify-end gap-2">
-                                                    {isPast ? (
+                                                {isPast ? (
+                                                    <button 
+                                                        onClick={() => handleDeleteAppt(appt.id)}
+                                                        className="w-8 h-8 rounded-xl bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 transition-all ml-1"
+                                                        title="Supprimer"
+                                                    >
+                                                        <TrashIcon />
+                                                    </button>
+                                                ) : appt.status === 'pending' ? (
+                                                    <div className="flex gap-1.5 ml-1">
                                                         <button 
-                                                            onClick={() => handleDeleteAppt(appt.id)}
-                                                            className="w-7 h-7 rounded-sm bg-gray-200 text-gray-500 flex items-center justify-center hover:bg-gray-300 transition-colors"
+                                                            onClick={() => updateStatus(appt.id, 'confirmed')}
+                                                            className="w-8 h-8 rounded-xl bg-green-100 text-green-600 flex items-center justify-center text-lg font-bold hover:bg-green-200 active:scale-95 transition-all"
+                                                            title="Confirmer"
                                                         >
-                                                            <TrashIcon />
+                                                            ✓
                                                         </button>
-                                                    ) : appt.status === 'pending' ? (
-                                                        <div className="flex gap-2">
-                                                            <button 
-                                                                onClick={() => updateStatus(appt.id, 'cancelled')}
-                                                                className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-600 font-bold border border-red-100 active:scale-95 transition-all"
-                                                            >
-                                                                ✕ Refuser
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => updateStatus(appt.id, 'confirmed')}
-                                                                className="text-xs px-3 py-1.5 rounded-lg bg-green-50 text-green-600 font-bold border border-green-100 active:scale-95 transition-all"
-                                                            >
-                                                                ✓ Confirmer
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex gap-2 items-center">
-                                                            {/* Edit button */}
-                                                            {(appt.status === 'confirmed' || appt.status === 'pending') && (
-                                                                <button
-                                                                    onClick={() => openEditModal(appt)}
-                                                                    className="w-7 h-7 rounded-md bg-blue-50 text-blue-500 flex items-center justify-center hover:bg-blue-100 transition-colors active:scale-95"
-                                                                >
-                                                                    <EditIcon />
-                                                                </button>
-                                                            )}
-                                                            {appt.status === 'confirmed' && (
-                                                                <button 
-                                                                    onClick={() => handleCancelAppt(appt.id)}
-                                                                    className="text-[10px] uppercase font-black px-2 py-1 rounded-md bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 transition-colors active:scale-95"
-                                                                >
-                                                                    Annuler
-                                                                </button>
-                                                            )}
-                                                            {(appt.status === 'cancelled' || appt.status === 'absent') && (
-                                                                <button 
-                                                                    onClick={() => handleDeleteAppt(appt.id)}
-                                                                    className="w-7 h-7 rounded-sm bg-red-100 text-red-600 flex items-center justify-center hover:bg-red-200 transition-colors"
-                                                                >
-                                                                    <TrashIcon />
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    )}
-
-                                                </div>
+                                                        <button 
+                                                            onClick={() => handleCancelAppt(appt.id)}
+                                                            className="w-8 h-8 rounded-xl bg-red-50 text-red-500 flex items-center justify-center text-sm font-black hover:bg-red-100 active:scale-95 transition-all"
+                                                            title="Annuler"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                ) : appt.status === 'confirmed' ? (
+                                                    <div className="flex gap-1.5 ml-1">
+                                                        <button 
+                                                            onClick={() => openEditModal(appt)}
+                                                            className="w-8 h-8 rounded-xl bg-blue-50 text-blue-500 flex items-center justify-center hover:bg-blue-100 active:scale-95 transition-all"
+                                                            title="Modifier"
+                                                        >
+                                                            <EditIcon />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => updateStatus(appt.id, 'absent')}
+                                                            className="w-8 h-8 rounded-xl bg-gray-100 text-gray-500 flex items-center justify-center text-sm hover:bg-gray-200 active:scale-95 transition-all"
+                                                            title="Absent"
+                                                        >
+                                                            😔
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleCancelAppt(appt.id)}
+                                                            className="w-8 h-8 rounded-xl bg-red-50 text-red-500 flex items-center justify-center text-sm font-black hover:bg-red-100 active:scale-95 transition-all"
+                                                            title="Annuler"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                ) : (appt.status === 'cancelled' || appt.status === 'absent') ? (
+                                                    <button 
+                                                        onClick={() => handleDeleteAppt(appt.id)}
+                                                        className="w-8 h-8 rounded-xl bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-100 active:scale-95 transition-all ml-1"
+                                                        title="Supprimer"
+                                                    >
+                                                        <TrashIcon />
+                                                    </button>
+                                                ) : null}
                                             </div>
                                         </div>
                                     );
